@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { useEffect, useState } from 'react'
 import { FaMoon, FaSun } from 'react-icons/fa'
 
@@ -14,15 +14,18 @@ import Reservations from './pages/Reservations'
 import Payments from './pages/Payments'
 import Inquiries from './pages/Inquiries'
 import Reports from './pages/Reports'
+import TenantAccount from './pages/TenantAccount'
 import Login from './pages/Login'
 import { supabase } from './supabase'
 
 function App() {
+  const location = useLocation()
   const [collapsed, setCollapsed] = useState(false)
   const [theme, setTheme] = useState(() => localStorage.getItem('rms-theme') || 'light')
   const [user, setUser] = useState(null)
   const [authLoading, setAuthLoading] = useState(true)
 
+  const isLoginPage = location.pathname === '/login'
   const handleToggle = () => setCollapsed((v) => !v)
   const toggleTheme = () => setTheme((current) => (current === 'dark' ? 'light' : 'dark'))
 
@@ -59,17 +62,24 @@ function App() {
   }
 
   return (
-    <BrowserRouter>
       <div className="app-shell">
         {user && <Sidebar collapsed={collapsed} onToggle={handleToggle} user={user} onLogout={handleLogout} />}
 
-        <main className="app-content" style={{ marginLeft: user ? (collapsed ? '112px' : '282px') : 0 }}>
-          <div className="app-toolbar">
-            <button className="theme-toggle" type="button" onClick={toggleTheme}>
-              {theme === 'dark' ? <FaSun /> : <FaMoon />}
-              <span>{theme === 'dark' ? 'Light Mode' : 'Dark Mode'}</span>
-            </button>
-          </div>
+        <main
+          className="app-content"
+          style={{
+            marginLeft: user ? (collapsed ? '112px' : '282px') : 0,
+            padding: isLoginPage ? 0 : '24px'
+          }}
+        >
+          {!isLoginPage && (
+            <div className="app-toolbar">
+              <button className="theme-toggle" type="button" onClick={toggleTheme}>
+                {theme === 'dark' ? <FaSun /> : <FaMoon />}
+                <span>{theme === 'dark' ? 'Light Mode' : 'Dark Mode'}</span>
+              </button>
+            </div>
+          )}
 
           <Routes>
             <Route path="/login" element={<Login user={user} onLogin={setUser} />} />
@@ -78,6 +88,7 @@ function App() {
               <Route path="/" element={<Dashboard />} />
               <Route path="/rooms" element={<Rooms />} />
               <Route path="/tenants" element={<Tenants />} />
+              <Route path="/tenant-account/:id" element={<TenantAccount />} />
               <Route path="/reservations" element={<Reservations />} />
               <Route path="/payments" element={<Payments />} />
               <Route path="/inquiries" element={<Inquiries />} />
@@ -88,7 +99,6 @@ function App() {
           </Routes>
         </main>
       </div>
-    </BrowserRouter>
   )
 }
 

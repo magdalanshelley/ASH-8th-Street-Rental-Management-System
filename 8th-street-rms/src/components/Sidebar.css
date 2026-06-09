@@ -5,10 +5,10 @@
   bottom: 16px;
   width: 250px;
   height: calc(100vh - 32px);
-  background: #020817;
-  color: #ffffff;
+  background: var(--sidebar-bg);
+  color: var(--text);
   border-radius: 20px;
-  box-shadow: rgba(0, 0, 0, 0.35) 0px 20px 60px;
+  box-shadow: rgba(0, 0, 0, 0.08) 0px 20px 60px;
   overflow: hidden;
   transition: width 0.28s ease;
   z-index: 50;
@@ -43,9 +43,9 @@
 }
 
 .hamburger {
-  background: rgba(255, 255, 255, 0.04);
-  color: #ffffff;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--surface-soft);
+  color: var(--text-h);
+  border: 1px solid var(--border);
   border-radius: 14px;
   font-size: 18px;
   width: 44px;
@@ -79,7 +79,7 @@
   display: inline-block;
   font-size: 16px;
   font-weight: 700;
-  color: #ffffff;
+  color: var(--text-h);
   white-space: nowrap;
   text-overflow: ellipsis;
   overflow: hidden;
@@ -103,14 +103,14 @@
   min-height: 56px;
   padding: 0 16px;
   border-radius: 18px;
-  color: #ffffff;
+  color: var(--text);
   text-decoration: none;
   position: relative;
   transition: background 0.2s ease;
 }
 
 .nav-item:hover {
-  background: rgba(59, 130, 246, 0.16);
+  background: var(--sidebar-hover);
 }
 
 .nav-item.active {
@@ -125,17 +125,17 @@
   min-width: 34px;
   height: 34px;
   border-radius: 12px;
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--surface-soft);
 }
 
 .nav-item .icon {
   font-size: 18px;
-  color: #ffffff;
+  color: var(--text);
 }
 
 .label {
   font-size: 15px;
-  color: #ffffff;
+  color: var(--text);
   white-space: nowrap;
 }
 
@@ -173,9 +173,9 @@
   margin: 0 auto;
   padding: 10px;
   border-radius: 16px;
-  background: #0f172a;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.16);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.08);
 }
 
 .profile-main {
@@ -192,7 +192,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--surface-soft);
   border-radius: 12px;
   font-size: 16px;
 }
@@ -209,13 +209,13 @@
 .profile .name {
   font-size: 13px;
   font-weight: 700;
-  color: #ffffff;
+  color: var(--text-h);
   line-height: 1.2;
 }
 
 .profile .role {
   font-size: 11px;
-  color: #94a3b8;
+  color: var(--text);
   overflow-wrap: anywhere;
   word-break: break-word;
   white-space: normal;
@@ -261,7 +261,7 @@
   display: flex;
   flex-direction: column;
   gap: 2px;
-  color: #94a3b8;
+  color: var(--text);
   font-size: 12px;
 }
 

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import Modal from '../components/Modal'
 import { supabase } from '../supabase'
 import { formatUnitLabel } from '../utils/rentalUnits'
@@ -15,6 +16,7 @@ const emptyTenant = {
   status: 'Active'
 }
 function Tenants() {
+  const navigate = useNavigate()
   const [tenants, setTenants] = useState([])
   const [rooms, setRooms] = useState([])
   const [formData, setFormData] = useState(emptyTenant)
@@ -295,8 +297,15 @@ function Tenants() {
                     </td>
                     <td>
                       <div className="action-group">
-                        <button className="action-btn btn-edit" type="button" onClick={() => openEditModal(tenant)}>Edit</button>
-                        <button className="action-btn btn-delete" type="button" onClick={() => deleteTenant(tenant.id)}>Delete</button>
+                        <button className="action-btn btn-view" type="button" onClick={() => navigate(`/tenant-account/${tenant.id}`)}>
+                          View Account
+                        </button>
+                        <button className="action-btn btn-edit" type="button" onClick={() => openEditModal(tenant)}>
+                          Edit
+                        </button>
+                        <button className="action-btn btn-delete" type="button" onClick={() => deleteTenant(tenant.id)}>
+                          Delete
+                        </button>
                       </div>
                     </td>
                   </tr>
