@@ -40,6 +40,8 @@ function Reports() {
     const unitById = new Map(rooms.map((unit) => [String(unit.id), unit]))
     const tenantById = new Map(tenants.map((tenant) => [String(tenant.id), tenant]))
 
+    const totalRevenue = payments.reduce((sum, p) => sum + Number(p.amount_paid || p.amount || 0), 0)
+
     const revenueByUnitType = payments.reduce((totals, payment) => {
       const tenant = tenantById.get(String(payment.tenant_id))
       const unit = unitById.get(String(tenant?.assigned_room_id))
@@ -62,6 +64,7 @@ function Reports() {
       occupiedUnits,
       reservedUnits,
       occupancyRate,
+      totalRevenue,
       revenueByUnitType,
       boardingTotal: boardingUnits.length,
       boardingOccupied,
@@ -85,6 +88,12 @@ function Reports() {
       value: `${analytics.boardingOccupied}/${analytics.boardingTotal}`,
       icon: FaUsers,
       accent: 'var(--primary)'
+    },
+    {
+      title: 'Total Revenue',
+      value: formatCurrency(analytics.totalRevenue),
+      icon: FaMoneyBillWave,
+      accent: 'var(--success)'
     }
   ]
 

@@ -1,83 +1,254 @@
-.dashboard-page{
-  padding: 8px 16px 32px 16px;
+/* ── Page shell ── */
+.dashboard-page {
+  padding: 24px 28px 40px;
   background: transparent;
   min-height: 100vh;
   text-align: left;
 }
 
-.dash-header h2{
-  margin: 0 0 4px 0;
-}
-.dash-header .sub{
-  margin: 0 0 16px 0;
-  color: var(--text);
+/* ── Header ── */
+.dash-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  margin-bottom: 24px;
 }
 
-.cards-grid{
+.dash-header h2 {
+  margin: 0 0 4px;
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text-h);
+  letter-spacing: -0.3px;
+}
+
+.dash-header .sub {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text);
+  opacity: 0.7;
+}
+
+.dash-header-date {
+  font-size: 12px;
+  color: var(--text);
+  opacity: 0.5;
+  text-align: right;
+  line-height: 1.6;
+}
+
+/* ── Stat Cards ── */
+.cards-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 16px;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
   margin-bottom: 20px;
 }
 
-.dash-card{
+.dash-card {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 16px;
+  gap: 14px;
+  padding: 18px 18px 18px 22px;
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 12px;
-  box-shadow: var(--shadow);
-  transition: transform 0.18s ease, box-shadow 0.18s ease;
+  border-radius: 14px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.18);
+  overflow: hidden;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
 }
 
-.card-icon{
-  width: 56px;
-  height: 56px;
+.dash-card::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  background: var(--card-accent, var(--primary));
+  border-radius: 14px 0 0 14px;
+}
+
+.dash-card::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 60px;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--card-accent, var(--primary)) 8%, transparent), transparent);
+  pointer-events: none;
+}
+
+.dash-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(0,0,0,0.25);
+}
+
+.card-icon {
+  width: 44px;
+  height: 44px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: var(--text-inverse);
   border-radius: 10px;
-  font-size: 20px;
+  font-size: 17px;
+  flex-shrink: 0;
+  background: color-mix(in srgb, var(--card-accent, var(--primary)) 18%, transparent);
+  color: var(--card-accent, var(--primary));
 }
 
-.card-value{
-  font-size: 20px;
-  font-weight: 700;
+.card-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
 }
-.card-title{
+
+.card-value {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text-h);
+  line-height: 1.1;
+  letter-spacing: -0.5px;
+}
+
+.card-title {
+  font-size: 12px;
+  color: var(--text);
+  opacity: 0.65;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── Lower Grid ── */
+.lower-grid {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 14px;
+}
+
+/* ── White Cards (panels) ── */
+.white-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  padding: 20px;
+  border-radius: 14px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.18);
+}
+
+.white-card h3 {
+  margin: 0 0 16px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-h);
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  opacity: 0.8;
+}
+
+/* ── Recent Activity ── */
+.activity-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.activity-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.activity-item:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.activity-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--primary);
+  flex-shrink: 0;
+  opacity: 0.8;
+}
+
+.activity-body {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  flex: 1;
+  min-width: 0;
+}
+
+.activity-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-h);
+}
+
+.activity-meta {
+  font-size: 12px;
+  color: var(--text);
+  opacity: 0.6;
+}
+
+.activity-amount {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--success, #4ade80);
+  flex-shrink: 0;
+}
+
+.activity-empty {
+  padding: 24px 0;
+  font-size: 13px;
+  color: var(--text);
+  opacity: 0.45;
+  text-align: center;
+}
+
+/* ── Quick Summary ── */
+.quick-summary ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.quick-summary li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 11px 0;
+  border-bottom: 1px solid var(--border);
   font-size: 13px;
   color: var(--text);
 }
 
-.lower-grid{
-  display: grid;
-  grid-template-columns: 2fr 1fr;
-  gap: 16px;
+.quick-summary li:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
 }
 
-.white-card{
-  background: var(--surface);
-  border: 1px solid var(--border);
-  padding: 16px;
-  border-radius: 12px;
-  box-shadow: var(--shadow);
-}
-
-.recent-activity .activity-list{
-  margin-top: 12px;
+.quick-summary li span:last-child {
+  font-weight: 700;
   color: var(--text-h);
 }
 
-.quick-summary ul{ list-style: none; padding:0; margin: 8px 0 0 0 }
-.quick-summary li{ padding:6px 0; color:var(--text-h) }
-
+/* ── Reports page ── */
 .report-list {
-  display: grid;
-  gap: 10px;
-  margin-top: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  margin-top: 4px;
 }
 
 .report-row {
@@ -88,20 +259,48 @@
   padding: 12px 0;
   border-bottom: 1px solid var(--border);
   color: var(--text);
+  font-size: 14px;
 }
 
 .report-row:last-child {
-  border-bottom: 0;
+  border-bottom: none;
 }
 
 .report-row strong {
   color: var(--text-h);
+  font-weight: 700;
 }
 
 .report-wide {
-  margin-top: 16px;
+  margin-top: 14px;
 }
 
-@media (max-width: 900px){
-  .lower-grid{ grid-template-columns: 1fr }
+/* ── Responsive ── */
+@media (max-width: 1100px) {
+  .cards-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 900px) {
+  .lower-grid {
+    grid-template-columns: 1fr;
+  }
+  .cards-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .dash-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+  }
+}
+
+@media (max-width: 520px) {
+  .dashboard-page {
+    padding: 16px 14px 32px;
+  }
+  .cards-grid {
+    grid-template-columns: 1fr;
+  }
 }
