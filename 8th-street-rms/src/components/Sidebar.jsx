@@ -45,7 +45,6 @@ function Sidebar({ collapsed = false, onToggle = () => {}, user, onLogout = () =
         </button>
 
         <div className="brand">
-          <div className="logo" />
           <div className="brand-copy">
             <span className="brand-name">8th Street RMS</span>
           </div>
