@@ -1,0 +1,268 @@
+/* Table styles for admin dashboard */
+.table-card {
+  overflow: hidden;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-shadow: var(--shadow);
+}
+
+:root[data-theme='dark'] .table-card,
+:root[data-theme='dark'] .dash-card,
+:root[data-theme='dark'] .white-card,
+:root[data-theme='dark'] .modal-card {
+  border: 1px solid var(--border);
+}
+
+.table-scroll {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.table-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.table-search {
+  width: min(320px, 100%);
+  padding: 10px 13px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-soft);
+  color: var(--text-h);
+  transition: border-color 160ms ease, box-shadow 160ms ease, background 160ms ease;
+}
+
+.table-search:focus {
+  outline: none;
+  background: var(--surface);
+  border-color: var(--primary);
+  box-shadow: 0 0 0 4px var(--primary-soft);
+}
+
+.bulk-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  color: var(--text-h);
+  font-size: 14px;
+  font-weight: 700;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-soft);
+}
+
+.bulk-toolbar .btn-delete {
+  padding: 9px 14px;
+  box-shadow: 0 10px 22px rgba(239, 68, 68, 0.18);
+}
+
+.modern-table {
+  width: 100%;
+  min-width: 760px;
+  border-collapse: collapse;
+}
+
+.modern-table thead th {
+  background: var(--surface-soft);
+  padding: 14px 16px;
+  text-align: left;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border-bottom: 1px solid var(--border);
+}
+
+.modern-table tbody td {
+  padding: 15px 16px;
+  color: var(--text-h);
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+
+.modern-table tbody tr {
+  transition: background 160ms ease;
+}
+
+.modern-table tbody tr:hover {
+  background: var(--surface-soft);
+}
+
+.modern-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.select-column {
+  width: 48px;
+  text-align: center !important;
+}
+
+.select-column input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--primary);
+  cursor: pointer;
+}
+
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.status-available,
+.status-paid {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.status-occupied {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.status-maintenance {
+  background: #ffedd5;
+  color: #c2410c;
+}
+
+.status-active {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+.status-approved,
+.status-resolved {
+  background: #ccfbf1;
+  color: #0f766e;
+}
+
+.status-pending {
+  background: #fef3c7;
+  color: #b45309;
+}
+
+.status-reserved {
+  background: #fef3c7;
+  color: #b45309;
+}
+
+.status-partial {
+  background: #e0e7ff;
+  color: #4338ca;
+}
+
+.status-inactive,
+.status-cancelled,
+.status-closed {
+  background: #e2e8f0;
+  color: #475569;
+}
+
+.action-group {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.action-btn {
+  padding: 8px 11px;
+  border-radius: 10px;
+  border: none;
+  cursor: pointer;
+  font-weight: 700;
+  transition: transform 160ms ease, filter 160ms ease;
+}
+
+.action-btn:hover {
+  transform: translateY(-1px);
+  filter: brightness(0.96);
+}
+
+.action-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+  transform: none;
+  filter: none;
+}
+
+.btn-edit {
+  background: var(--warning);
+  color: #fff;
+}
+
+.btn-delete {
+  background: var(--danger);
+  color: #fff;
+}
+
+.empty-state {
+  padding: 26px 16px;
+  text-align: center;
+  color: var(--text);
+}
+
+:root[data-theme='dark'] .status-available,
+:root[data-theme='dark'] .status-paid {
+  background: rgba(96, 165, 250, 0.18);
+  color: #bfdbfe;
+}
+
+:root[data-theme='dark'] .status-occupied {
+  background: rgba(248, 113, 113, 0.18);
+  color: #fecaca;
+}
+
+:root[data-theme='dark'] .status-maintenance,
+:root[data-theme='dark'] .status-pending,
+:root[data-theme='dark'] .status-reserved {
+  background: rgba(251, 191, 36, 0.18);
+  color: #fde68a;
+}
+
+@media (max-width: 720px) {
+  .table-toolbar,
+  .bulk-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .table-search {
+    width: 100%;
+    box-sizing: border-box;
+  }
+}
+
+:root[data-theme='dark'] .status-active {
+  background: rgba(52, 211, 153, 0.18);
+  color: #bbf7d0;
+}
+
+:root[data-theme='dark'] .status-approved,
+:root[data-theme='dark'] .status-resolved {
+  background: rgba(45, 212, 191, 0.18);
+  color: #99f6e4;
+}
+
+:root[data-theme='dark'] .status-partial {
+  background: rgba(129, 140, 248, 0.18);
+  color: #c7d2fe;
+}
+
+:root[data-theme='dark'] .status-inactive,
+:root[data-theme='dark'] .status-cancelled,
+:root[data-theme='dark'] .status-closed {
+  background: rgba(148, 163, 184, 0.18);
+  color: #cbd5e1;
+}
