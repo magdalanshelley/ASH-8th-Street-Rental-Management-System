@@ -2,22 +2,22 @@ import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { supabase } from '../supabase'
 import Modal from '../components/Modal'
+import { ensureDefaultUnits, formatCurrency, formatUnitLabel } from '../utils/rentalUnits'
+import {
+  buildTenantLedger,
+  getPaymentAmountOptions,
+  getPaymentStatus,
+  getTenantMonthlyRent,
+  statusClass
+} from '../utils/rmsBusiness'
+import { dispatchRmsRefresh } from '../utils/rmsEvents'
 import './TenantAccount.css'
-
-function formatCurrency(value) {
-  const amount = Number(value)
-  if (Number.isNaN(amount)) return '0.00'
-  return amount.toLocaleString('en-US', {
-    style: 'currency',
-    currency: 'USD'
-  })
-}
 
 function TenantAccount() {
   const { id } = useParams()
   const navigate = useNavigate()
   const [tenant, setTenant] = useState(null)
-  const [roomLabel, setRoomLabel] = useState('-')
+  const [rooms, setRooms] = useState([])
   const [payments, setPayments] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -25,62 +25,49 @@ function TenantAccount() {
   const [saving, setSaving] = useState(false)
   const [successMessage, setSuccessMessage] = useState('')
   const [paymentForm, setPaymentForm] = useState({
-    amount_paid: '',
+    amount_option: '',
+    custom_amount: '',
     payment_date: '',
-    payment_method: 'Cash',
-    payment_status: 'Paid'
+    payment_method: 'Cash'
   })
+
+  async function fetchData() {
+    setLoading(true)
+    setError('')
+
+    try {
+      const [{ data: tenantData, error: tenantError }, { data: paymentData, error: paymentError }] = await Promise.all([
+        supabase.from('tenants').select('*').eq('id', id).single(),
+        supabase.from('payments').select('*').eq('tenant_id', id).order('payment_date', { ascending: false })
+      ])
+
+      if (tenantError) throw tenantError
+      if (paymentError) throw paymentError
+
+      const roomData = await ensureDefaultUnits(supabase)
+
+      setTenant(tenantData)
+      setPayments(paymentData || [])
+      setRooms(roomData || [])
+    } catch (fetchError) {
+      console.error(fetchError)
+      setError(fetchError.message || 'Unable to load tenant account.')
+    } finally {
+      setLoading(false)
+    }
+  }
 
   useEffect(() => {
     if (!id) return
-
-    const fetchData = async () => {
-      setLoading(true)
-      setError('')
-      try {
-        const { data: tenantData, error: tenantError } = await supabase
-          .from('tenants')
-          .select('*')
-          .eq('id', id)
-          .single()
-
-        if (tenantError) throw tenantError
-        setTenant(tenantData)
-
-        if (tenantData?.assigned_room_id) {
-          const { data: roomData, error: roomError } = await supabase
-            .from('rooms')
-            .select('*')
-            .eq('id', tenantData.assigned_room_id)
-            .single()
-
-          if (roomError) throw roomError
-          setRoomLabel(`${roomData.room_number || 'Unit'} ${roomData.building || ''}`.trim())
-        } else {
-          setRoomLabel('-')
-        }
-
-        const { data: paymentData, error: paymentError } = await supabase
-          .from('payments')
-          .select('*')
-          .eq('tenant_id', id)
-          .order('payment_date', { ascending: false })
-
-        if (paymentError) throw paymentError
-        setPayments(paymentData || [])
-      } catch (fetchError) {
-        console.error(fetchError)
-        setError(fetchError.message || 'Unable to load tenant account.')
-      } finally {
-        setLoading(false)
-      }
-    }
-
     fetchData()
   }, [id])
 
+  const assignedRoom = rooms.find((room) => String(room.id) === String(tenant?.assigned_room_id))
+  const monthlyRent = getTenantMonthlyRent(tenant, rooms)
+  const ledger = useMemo(() => buildTenantLedger(tenant, payments, rooms), [tenant, payments, rooms])
   const summary = useMemo(() => {
     const totalAmount = payments.reduce((sum, payment) => sum + Number(payment.amount_paid || 0), 0)
+
     return {
       totalPayments: payments.length,
       totalAmountPaid: totalAmount,
@@ -88,18 +75,23 @@ function TenantAccount() {
     }
   }, [payments])
 
-  const openModal = () => {
+  const selectedAmount = paymentForm.amount_option === 'custom'
+    ? Number(paymentForm.custom_amount || 0)
+    : Number(paymentForm.amount_option || 0)
+  const calculatedStatus = getPaymentStatus(selectedAmount, monthlyRent)
+
+  function openModal() {
     setSuccessMessage('')
     setPaymentForm({
-      amount_paid: '',
+      amount_option: '',
+      custom_amount: '',
       payment_date: '',
-      payment_method: 'Cash',
-      payment_status: 'Paid'
+      payment_method: 'Cash'
     })
     setIsModalOpen(true)
   }
 
-  const closeModal = () => {
+  function closeModal() {
     setIsModalOpen(false)
   }
 
@@ -112,28 +104,36 @@ function TenantAccount() {
     event.preventDefault()
     setError('')
 
-    if (!paymentForm.amount_paid || !paymentForm.payment_date) {
+    if (!paymentForm.amount_option || !paymentForm.payment_date) {
       setError('Please fill out amount and date.')
+      return
+    }
+
+    if (Number.isNaN(selectedAmount) || selectedAmount < 0) {
+      setError('Payment amount cannot be negative.')
       return
     }
 
     setSaving(true)
     try {
+      const remainingBalance = Math.max(monthlyRent - selectedAmount, 0)
       const { error: insertError } = await supabase.from('payments').insert([
         {
-          tenant_id: id,
-          amount_paid: Number(paymentForm.amount_paid),
-          payment_date: paymentForm.payment_date,
-          payment_method: paymentForm.payment_method,
-          payment_status: paymentForm.payment_status,
-          remaining_balance: 0
-        }
+  tenant_id: id,
+  amount_paid: selectedAmount,
+  payment_date: paymentForm.payment_date,
+  payment_method: paymentForm.payment_method,
+  payment_status: calculatedStatus,
+  remaining_balance: remainingBalance
+}
       ])
 
       if (insertError) throw insertError
+
       setSuccessMessage('Payment recorded successfully.')
       closeModal()
       await reloadPayments()
+      dispatchRmsRefresh()
     } catch (saveError) {
       console.error(saveError)
       setError(saveError.message || 'Unable to save payment.')
@@ -206,8 +206,12 @@ function TenantAccount() {
               <dd>{tenant.contact_number || '-'}</dd>
             </div>
             <div>
-              <dt>Assigned Room</dt>
-              <dd>{roomLabel}</dd>
+              <dt>Assigned Unit</dt>
+              <dd>{formatUnitLabel(assignedRoom)}</dd>
+            </div>
+            <div>
+              <dt>Monthly Rent</dt>
+              <dd>{formatCurrency(monthlyRent)}</dd>
             </div>
             <div>
               <dt>Check In Date</dt>
@@ -242,10 +246,10 @@ function TenantAccount() {
       <section className="payments-section">
         <div className="section-header">
           <div>
-            <h2>Payment History</h2>
-            <p>Recent payment activity for this tenant.</p>
+            <h2>Payment Ledger</h2>
+            <p>Monthly rent, payments made, balance, and payment status.</p>
           </div>
-          <span>{payments.length} records</span>
+          <span>{ledger.length} month(s)</span>
         </div>
 
         <div className="table-card">
@@ -253,31 +257,31 @@ function TenantAccount() {
             <table className="modern-table">
               <thead>
                 <tr>
-                  <th>Payment Date</th>
-                  <th>Amount Paid</th>
-                  <th>Payment Method</th>
+                  <th>Month</th>
+                  <th>Rent Due</th>
+                  <th>Payments Made</th>
+                  <th>Outstanding Balance</th>
                   <th>Status</th>
-                  <th>Remaining Balance</th>
                 </tr>
               </thead>
               <tbody>
-                {payments.map((payment) => (
-                  <tr key={payment.id}>
-                    <td>{payment.payment_date || '-'}</td>
-                    <td>{formatCurrency(payment.amount_paid)}</td>
-                    <td>{payment.payment_method}</td>
+                {ledger.map((entry) => (
+                  <tr key={entry.monthKey}>
+                    <td>{entry.monthLabel}</td>
+                    <td>{formatCurrency(entry.rentDue)}</td>
+                    <td>{formatCurrency(entry.paymentsMade)}</td>
+                    <td>{formatCurrency(entry.outstandingBalance)}</td>
                     <td>
-                      <span className={`status-badge status-${String(payment.payment_status || '').toLowerCase()}`}>
-                        {payment.payment_status}
+                      <span className={`status-badge status-${statusClass(entry.status)}`}>
+                        {entry.status}
                       </span>
                     </td>
-                    <td>{payment.remaining_balance != null ? formatCurrency(payment.remaining_balance) : '-'}</td>
                   </tr>
                 ))}
-                {payments.length === 0 && (
+                {ledger.length === 0 && (
                   <tr>
                     <td className="empty-state" colSpan="5">
-                      No payments have been recorded for this tenant yet.
+                      No payment ledger entries found.
                     </td>
                   </tr>
                 )}
@@ -291,18 +295,37 @@ function TenantAccount() {
         <form className="modal-form" onSubmit={handleSavePayment}>
           <div className="form-grid">
             <label className="form-group full-width">
-              <span className="form-label">Amount Paid</span>
-              <input
+              <span className="form-label">Payment Amount</span>
+              <select
                 className="form-input"
-                name="amount_paid"
-                type="number"
-                step="0.01"
-                min="0"
-                value={paymentForm.amount_paid}
+                name="amount_option"
+                value={paymentForm.amount_option}
                 onChange={handlePaymentChange}
                 required
-              />
+              >
+                <option value="">Select Amount</option>
+                {getPaymentAmountOptions(monthlyRent).map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+                <option value="custom">Custom Amount</option>
+              </select>
             </label>
+
+            {paymentForm.amount_option === 'custom' && (
+              <label className="form-group full-width">
+                <span className="form-label">Custom Amount</span>
+                <input
+                  className="form-input"
+                  name="custom_amount"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={paymentForm.custom_amount}
+                  onChange={handlePaymentChange}
+                  required
+                />
+              </label>
+            )}
 
             <label className="form-group full-width">
               <span className="form-label">Payment Date</span>
@@ -331,17 +354,8 @@ function TenantAccount() {
             </label>
 
             <label className="form-group full-width">
-              <span className="form-label">Payment Status</span>
-              <select
-                className="form-input"
-                name="payment_status"
-                value={paymentForm.payment_status}
-                onChange={handlePaymentChange}
-              >
-                <option value="Paid">Paid</option>
-                <option value="Partial">Partial</option>
-                <option value="Pending">Pending</option>
-              </select>
+              <span className="form-label">Calculated Status</span>
+              <input className="form-input" value={calculatedStatus} disabled />
             </label>
           </div>
 

@@ -60,15 +60,32 @@
   background: rgba(59, 130, 246, 0.16);
 }
 
+/* ── Brand / Logo ── */
 .brand {
   display: flex;
   align-items: center;
-  gap: 0;
+  gap: 10px;
   min-height: 56px;
 }
 
 .sidebar.collapsed .brand {
   justify-content: center;
+  gap: 0;
+}
+
+.brand-logo {
+  width: 42px;
+  height: 42px;
+  object-fit: contain;
+  border-radius: 12px;
+  flex-shrink: 0;
+  background: #fff;
+  padding: 3px;
+}
+
+.sidebar.collapsed .brand-logo {
+  width: 38px;
+  height: 38px;
 }
 
 .brand-copy {
@@ -90,6 +107,7 @@
   width: 0;
 }
 
+/* ── Nav menu ── */
 .menu {
   display: flex;
   flex-direction: column;
@@ -163,6 +181,7 @@
   flex-grow: 1;
 }
 
+/* ── Profile card ── */
 .profile-card {
   display: flex;
   flex-direction: column;
@@ -257,6 +276,7 @@
   display: inline-block;
 }
 
+/* ── Footer ── */
 .sidebar-footer {
   display: flex;
   flex-direction: column;

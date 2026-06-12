@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import Modal from '../components/Modal'
 import { supabase } from '../supabase'
-import { formatUnitLabel } from '../utils/rentalUnits'
+import { TENANT_STATUSES, ensureDefaultUnits, formatCurrency, formatUnitLabel } from '../utils/rentalUnits'
+import { summarizeTenantMonth, statusClass } from '../utils/rmsBusiness'
 import { dispatchRmsRefresh, RMS_REFRESH_EVENT } from '../utils/rmsEvents'
 
 const emptyTenant = {
@@ -15,10 +16,12 @@ const emptyTenant = {
   contract_duration: '',
   status: 'Active'
 }
+
 function Tenants() {
   const navigate = useNavigate()
   const [tenants, setTenants] = useState([])
   const [rooms, setRooms] = useState([])
+  const [payments, setPayments] = useState([])
   const [formData, setFormData] = useState(emptyTenant)
   const [editingId, setEditingId] = useState(null)
   const [isModalOpen, setIsModalOpen] = useState(false)
@@ -28,10 +31,12 @@ function Tenants() {
   useEffect(() => {
     fetchTenants()
     fetchRooms()
+    fetchPayments()
 
     const handleRefresh = () => {
       fetchTenants()
       fetchRooms()
+      fetchPayments()
     }
 
     window.addEventListener(RMS_REFRESH_EVENT, handleRefresh)
@@ -53,17 +58,25 @@ function Tenants() {
   }
 
   async function fetchRooms() {
+    try {
+      const data = await ensureDefaultUnits(supabase)
+      setRooms(data || [])
+    } catch (error) {
+      console.error(error)
+    }
+  }
+
+  async function fetchPayments() {
     const { data, error } = await supabase
-      .from('rooms')
+      .from('payments')
       .select('*')
-      .order('room_number')
 
     if (error) {
       console.error(error)
       return
     }
 
-    setRooms(data || [])
+    setPayments(data || [])
   }
 
   function handleChange(event) {
@@ -98,21 +111,22 @@ function Tenants() {
 
   async function handleSubmit(event) {
     event.preventDefault()
+    const previousTenant = editingId ? tenants.find((tenant) => tenant.id === editingId) : null
+
+    const assignedRoomId = formData.assigned_room_id
+      ? Number(formData.assigned_room_id)
+      : (previousTenant?.assigned_room_id || null)
 
     const payload = {
       full_name: formData.full_name,
       contact_number: formData.contact_number,
       address: formData.address,
       valid_id: formData.valid_id,
-      assigned_room_id: formData.assigned_room_id || null,
+      assigned_room_id: assignedRoomId,
       check_in_date: formData.check_in_date || null,
       contract_duration: formData.contract_duration || null,
       status: formData.status
     }
-
-    const previousTenant = editingId ? tenants.find((tenant) => tenant.id === editingId) : null
-    const previousRoomId = previousTenant?.assigned_room_id
-    const newRoomId = formData.assigned_room_id || null
 
     const { error } = editingId
       ? await supabase.from('tenants').update(payload).eq('id', editingId)
@@ -123,45 +137,31 @@ function Tenants() {
       return
     }
 
-    if (previousRoomId && previousRoomId !== newRoomId) {
-      await supabase.from('rooms').update({ status: 'Available' }).eq('id', previousRoomId)
+    // If a room was assigned, mark it Occupied
+    if (assignedRoomId && !editingId) {
+      await supabase.from('rooms').update({ status: 'Occupied' }).eq('id', assignedRoomId)
     }
 
-    if (newRoomId) {
-      await supabase.from('rooms').update({ status: 'Occupied' }).eq('id', newRoomId)
-      await supabase.from('reservations').update({ status: 'Approved' }).eq('room_id', newRoomId)
+    // If editing and room changed, update old and new room statuses
+    if (editingId && previousTenant?.assigned_room_id !== assignedRoomId) {
+      if (previousTenant?.assigned_room_id) {
+        await supabase.from('rooms').update({ status: 'Available' }).eq('id', previousTenant.assigned_room_id)
+      }
+      if (assignedRoomId) {
+        await supabase.from('rooms').update({ status: 'Occupied' }).eq('id', assignedRoomId)
+      }
+    }
+
+    if (payload.status === 'Moved Out' && previousTenant?.assigned_room_id) {
+      await supabase.from('rooms').update({ status: 'Available' }).eq('id', previousTenant.assigned_room_id)
     }
 
     closeModal()
     await fetchTenants()
     await fetchRooms()
+    await fetchPayments()
     dispatchRmsRefresh()
     alert('Tenant saved successfully.')
-  }
-
-  async function deleteTenant(id) {
-    const confirmDelete = window.confirm('Are you sure you want to delete this tenant?')
-    if (!confirmDelete) return
-
-    const tenant = tenants.find((currentTenant) => currentTenant.id === id)
-    const { error } = await supabase.from('tenants').delete().eq('id', id)
-
-    if (error) {
-      alert(error.message)
-      return
-    }
-
-    if (tenant?.assigned_room_id) {
-      await supabase
-        .from('rooms')
-        .update({ status: 'Available' })
-        .eq('id', tenant.assigned_room_id)
-    }
-
-    setSelectedIds((current) => current.filter((selectedId) => selectedId !== id))
-    await fetchTenants()
-    await fetchRooms()
-    dispatchRmsRefresh()
   }
 
   function toggleSelectAll(event) {
@@ -201,16 +201,18 @@ function Tenants() {
     dispatchRmsRefresh()
   }
 
-  const assignableRooms = rooms.filter((room) => {
-    const isAvailable = room.status === 'Available'
-    const isCurrentRoom = editingId && String(room.id) === String(formData.assigned_room_id)
-
-    return isAvailable || isCurrentRoom
-  })
-
   function findAssignedUnit(unitId) {
     return rooms.find((room) => String(room.id) === String(unitId))
   }
+
+  // Only show Available rooms in the dropdown (plus current tenant's room when editing)
+  const availableRooms = rooms.filter((room) => {
+    if (editingId) {
+      const currentTenant = tenants.find((t) => t.id === editingId)
+      return room.status === 'Available' || String(room.id) === String(currentTenant?.assigned_room_id)
+    }
+    return room.status === 'Available'
+  })
 
   const filteredTenants = tenants.filter((tenant) => {
     const assignedUnit = findAssignedUnit(tenant.assigned_room_id)
@@ -225,6 +227,29 @@ function Tenants() {
     )
   })
 
+  async function moveOutTenant(tenant) {
+    const confirmMoveOut = window.confirm(`Move out ${tenant.full_name}? The assigned unit will become Available.`)
+    if (!confirmMoveOut) return
+
+    const { error } = await supabase
+      .from('tenants')
+      .update({ status: 'Moved Out' })
+      .eq('id', tenant.id)
+
+    if (error) {
+      alert(error.message)
+      return
+    }
+
+    if (tenant.assigned_room_id) {
+      await supabase.from('rooms').update({ status: 'Available' }).eq('id', tenant.assigned_room_id)
+    }
+
+    await fetchTenants()
+    await fetchRooms()
+    dispatchRmsRefresh()
+  }
+
   const allSelected = filteredTenants.length > 0 && filteredTenants.every((tenant) => selectedIds.includes(tenant.id))
 
   return (
@@ -235,9 +260,14 @@ function Tenants() {
           <p className="page-kicker">Keep tenant profiles, assigned units, and contracts organized.</p>
         </div>
 
-        <button className="btn-add" type="button" onClick={openAddModal}>
-          + Add Tenant
-        </button>
+        <div className="action-group">
+          <button className="btn-add" type="button" onClick={openAddModal}>
+            Add Tenant
+          </button>
+          <button className="btn-secondary" type="button" onClick={() => navigate('/reservations')}>
+            Convert Reservation
+          </button>
+        </div>
       </div>
 
       <div className="table-card">
@@ -266,11 +296,11 @@ function Tenants() {
                 <th className="select-column">
                   <input type="checkbox" checked={allSelected} onChange={toggleSelectAll} aria-label="Select all tenants" />
                 </th>
-                <th>Name</th>
-                <th>Contact</th>
-                <th>Address</th>
+                <th>Tenant Name</th>
                 <th>Assigned Unit</th>
-                <th>Check In</th>
+                <th>Monthly Rent</th>
+                <th>Total Paid</th>
+                <th>Outstanding Balance</th>
                 <th>Status</th>
                 <th>Actions</th>
               </tr>
@@ -279,6 +309,7 @@ function Tenants() {
             <tbody>
               {filteredTenants.map((tenant) => {
                 const assignedUnit = findAssignedUnit(tenant.assigned_room_id)
+                const summary = summarizeTenantMonth(tenant, payments, rooms)
 
                 return (
                   <tr key={tenant.id}>
@@ -286,12 +317,12 @@ function Tenants() {
                       <input type="checkbox" checked={selectedIds.includes(tenant.id)} onChange={(event) => toggleSelected(tenant.id, event.target.checked)} aria-label={`Select tenant ${tenant.full_name}`} />
                     </td>
                     <td>{tenant.full_name}</td>
-                    <td>{tenant.contact_number}</td>
-                    <td>{tenant.address}</td>
                     <td>{formatUnitLabel(assignedUnit)}</td>
-                    <td>{tenant.check_in_date || '-'}</td>
+                    <td>{formatCurrency(summary.monthlyRent)}</td>
+                    <td>{formatCurrency(summary.paymentsMade)}</td>
+                    <td>{formatCurrency(summary.outstandingBalance)}</td>
                     <td>
-                      <span className={`status-badge status-${String(tenant.status || '').toLowerCase()}`}>
+                      <span className={`status-badge status-${statusClass(tenant.status)}`}>
                         {tenant.status}
                       </span>
                     </td>
@@ -303,9 +334,11 @@ function Tenants() {
                         <button className="action-btn btn-edit" type="button" onClick={() => openEditModal(tenant)}>
                           Edit
                         </button>
-                        <button className="action-btn btn-delete" type="button" onClick={() => deleteTenant(tenant.id)}>
-                          Delete
-                        </button>
+                        {tenant.status === 'Active' && (
+                          <button className="action-btn btn-delete" type="button" onClick={() => moveOutTenant(tenant)}>
+                            Move Out
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -352,11 +385,10 @@ function Tenants() {
             <label className="form-group">
               <span className="form-label">Assigned Unit</span>
               <select className="form-input" name="assigned_room_id" value={formData.assigned_room_id} onChange={handleChange}>
-                <option value="">Select Unit</option>
-                {assignableRooms.map((room) => (
+                <option value="">-- No Unit Assigned --</option>
+                {availableRooms.map((room) => (
                   <option key={room.id} value={room.id}>
                     {formatUnitLabel(room)}
-                    {room.status !== 'Available' ? ` (${room.status})` : ''}
                   </option>
                 ))}
               </select>
@@ -375,8 +407,9 @@ function Tenants() {
             <label className="form-group">
               <span className="form-label">Status</span>
               <select className="form-input" name="status" value={formData.status} onChange={handleChange}>
-                <option value="Active">Active</option>
-                <option value="Inactive">Inactive</option>
+                {TENANT_STATUSES.map((status) => (
+                  <option key={status} value={status}>{status}</option>
+                ))}
               </select>
             </label>
           </div>

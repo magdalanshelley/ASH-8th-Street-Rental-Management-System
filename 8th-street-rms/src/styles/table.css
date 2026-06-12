@@ -143,6 +143,7 @@
 }
 
 .status-approved,
+.status-converted,
 .status-resolved {
   background: #ccfbf1;
   color: #0f766e;
@@ -164,6 +165,7 @@
 }
 
 .status-inactive,
+.status-moved-out,
 .status-cancelled,
 .status-closed {
   background: #e2e8f0;
@@ -204,6 +206,11 @@
 
 .btn-delete {
   background: var(--danger);
+  color: #fff;
+}
+
+.btn-view {
+  background: var(--primary);
   color: #fff;
 }
 
@@ -250,6 +257,7 @@
 }
 
 :root[data-theme='dark'] .status-approved,
+:root[data-theme='dark'] .status-converted,
 :root[data-theme='dark'] .status-resolved {
   background: rgba(45, 212, 191, 0.18);
   color: #99f6e4;
@@ -261,6 +269,7 @@
 }
 
 :root[data-theme='dark'] .status-inactive,
+:root[data-theme='dark'] .status-moved-out,
 :root[data-theme='dark'] .status-cancelled,
 :root[data-theme='dark'] .status-closed {
   background: rgba(148, 163, 184, 0.18);

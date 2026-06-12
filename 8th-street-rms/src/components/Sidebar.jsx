@@ -13,6 +13,7 @@ import {
   FaSignOutAlt
 } from 'react-icons/fa'
 import './Sidebar.css'
+import logo from '../assets/logo.jpg'
 
 const MENU = [
   { name: 'Dashboard', to: '/', icon: FaHome },
@@ -44,7 +45,13 @@ function Sidebar({ collapsed = false, onToggle = () => {}, user, onLogout = () =
           <FaBars />
         </button>
 
+        {/* ── BRAND / LOGO ── */}
         <div className="brand">
+          <img
+            src={logo}
+            alt="8th Street RMS Logo"
+            className="brand-logo"
+          />
           <div className="brand-copy">
             <span className="brand-name">8th Street RMS</span>
           </div>

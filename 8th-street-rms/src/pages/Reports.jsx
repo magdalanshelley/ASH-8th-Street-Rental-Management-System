@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
-  FaMoneyBillWave,
   FaUsers,
   FaFileExcel,
   FaDownload,
@@ -15,7 +14,8 @@ import {
   FaSpinner
 } from 'react-icons/fa'
 import { supabase } from '../supabase'
-import { formatCurrency, getUnitTypeLabel } from '../utils/rentalUnits'
+import { ensureDefaultUnits, formatCurrency, getUnitTypeLabel } from '../utils/rentalUnits'
+import { getPaymentStatusValue, statusClass } from '../utils/rmsBusiness'
 import { exportRMSReport } from '../utils/exportReport'
 import { motion } from 'framer-motion'
 import './Dashboard.css'
@@ -78,11 +78,9 @@ export default function Reports() {
   const [exporting, setExporting] = useState(false)
   const [exportMsg, setExportMsg] = useState('')
 
-  useEffect(() => { load() }, [])
-
   async function load() {
-    const [{ data: r }, { data: t }, { data: p }] = await Promise.all([
-      supabase.from('rooms').select('*'),
+    const [r, { data: t }, { data: p }] = await Promise.all([
+      ensureDefaultUnits(supabase),
       supabase.from('tenants').select('*'),
       supabase.from('payments').select('*, tenants(full_name, assigned_room_id)')
     ])
@@ -90,6 +88,8 @@ export default function Reports() {
     setTenants(t || [])
     setPayments(p || [])
   }
+
+  useEffect(() => { load() }, [])
 
   const a = useMemo(() => {
     const unitMap    = new Map(rooms.map(u => [String(u.id), u]))
@@ -103,12 +103,15 @@ export default function Reports() {
       if (isRS(room)) rentalRev += amt; else boardingRev += amt
     }
     const totalRevenue = boardingRev + rentalRev
-    const paid    = payments.filter(p => (p.status||'').toLowerCase() === 'paid').length
-    const pending = payments.filter(p => (p.status||'').toLowerCase() === 'pending').length
-    const partial = payments.filter(p => (p.status||'').toLowerCase() === 'partial').length
+    const paid    = payments.filter(p => getPaymentStatusValue(p, p.tenants || tenantById.get(String(p.tenant_id)), rooms).toLowerCase() === 'paid').length
+    const pending = payments.filter(p => getPaymentStatusValue(p, p.tenants || tenantById.get(String(p.tenant_id)), rooms).toLowerCase() === 'pending').length
+    const partial = payments.filter(p => getPaymentStatusValue(p, p.tenants || tenantById.get(String(p.tenant_id)), rooms).toLowerCase() === 'partial').length
     const active  = tenants.filter(t => t.status === 'Active' || t.is_active).length
     const former  = tenants.length - active
-    return { totalRevenue, boardingRev, rentalRev, paid, pending, partial, active, former }
+    const available = rooms.filter(unit => unit.status === 'Available').length
+    const reserved = rooms.filter(unit => unit.status === 'Reserved').length
+    const occupied = rooms.filter(unit => unit.status === 'Occupied').length
+    return { totalRevenue, boardingRev, rentalRev, paid, pending, partial, active, former, available, reserved, occupied }
   }, [rooms, tenants, payments])
 
   async function handleExport() {
@@ -137,6 +140,11 @@ export default function Reports() {
     { title: 'Active Tenants', value: a.active,       icon: FaUserCheck, accent: 'var(--success)', sub: 'Currently renting' },
     { title: 'Former Tenants', value: a.former,       icon: FaUserTimes, accent: 'var(--info)',    sub: 'Past tenants' },
   ]
+  const inventoryCards = [
+    { title: 'Available Units', value: a.available, icon: FaBuilding, accent: 'var(--info)', sub: 'Ready to reserve' },
+    { title: 'Reserved Units', value: a.reserved, icon: FaClock, accent: 'var(--warning)', sub: 'Reservation hold' },
+    { title: 'Occupied Units', value: a.occupied, icon: FaUserCheck, accent: 'var(--danger)', sub: 'Active tenant assigned' },
+  ]
 
   return (
     <motion.div className="dashboard-page"
@@ -162,6 +170,15 @@ export default function Reports() {
       <div className="report-section-label">Tenant Analytics</div>
       <section className="cards-grid cards-grid--3">
         {tenantCards.map((c, i) => (
+          <motion.div key={c.title} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}>
+            <ReportCard {...c} />
+          </motion.div>
+        ))}
+      </section>
+
+      <div className="report-section-label">Inventory Analytics</div>
+      <section className="cards-grid cards-grid--3">
+        {inventoryCards.map((c, i) => (
           <motion.div key={c.title} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}>
             <ReportCard {...c} />
           </motion.div>
@@ -222,7 +239,7 @@ export default function Reports() {
                     <td><strong>{unit.room_number}</strong></td>
                     <td>{getUnitTypeLabel(unit.room_type)}</td>
                     <td>{formatCurrency(unit.monthly_rent)}</td>
-                    <td><span className={`status-badge status-${String(unit.status||'').toLowerCase()}`}>{unit.status||'Available'}</span></td>
+                    <td><span className={`status-badge status-${statusClass(unit.status)}`}>{unit.status||'Available'}</span></td>
                     <td>{tenant?.full_name || <span style={{ opacity: 0.4 }}>—</span>}</td>
                   </tr>
                 )

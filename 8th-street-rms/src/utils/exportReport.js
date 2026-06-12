@@ -9,6 +9,7 @@
  */
 import ExcelJS from 'exceljs'
 import { saveAs } from 'file-saver'  // npm install file-saver
+import { getPaymentStatusValue, summarizeTenantMonth } from './rmsBusiness'
 
 // ── Palette ───────────────────────────────────────────────────────────────────
 const P = {
@@ -166,8 +167,8 @@ export async function exportRMSReport({ rooms = [], tenants = [], payments = [] 
     { heading: 'FINANCIALS', rows: [
       ['Total Payments Recorded', payments.length],
       ['Total Revenue Collected (PHP)', totalPaid, '#,##0'],
-      ['Pending / Unpaid',        payments.filter(p => (p.status || '').toLowerCase() === 'pending').length],
-      ['Partial Payments',        payments.filter(p => (p.status || '').toLowerCase() === 'partial').length],
+      ['Pending / Unpaid',        payments.filter(p => getPaymentStatusValue(p, p.tenants || tenantMap.get(String(p.tenant_id)), rooms).toLowerCase() === 'pending').length],
+      ['Partial Payments',        payments.filter(p => getPaymentStatusValue(p, p.tenants || tenantMap.get(String(p.tenant_id)), rooms).toLowerCase() === 'partial').length],
     ]},
     { heading: 'TENANTS', rows: [
       ['Total Tenants',     tenants.length],
@@ -258,7 +259,7 @@ export async function exportRMSReport({ rooms = [], tenants = [], payments = [] 
     const movein = t.move_in_date || t.start_date || t.created_at || ''
     const statusLabel = t.status || (t.is_active ? 'Active' : 'Inactive')
     const rent = assignedRoom ? Number(assignedRoom.monthly_rent || 0) : 0
-    const balance = Number(t.balance_due || t.outstanding_balance || 0)
+    const balance = summarizeTenantMonth(t, payments, rooms).outstandingBalance
 
     const row = ws3.addRow([
       i + 1,
@@ -303,7 +304,7 @@ export async function exportRMSReport({ rooms = [], tenants = [], payments = [] 
     const room   = tenant?.assigned_room_id ? unitMap.get(String(tenant.assigned_room_id)) : null
     const unit   = room ? unitNo(room) : (p.room_number || '—')
     const amount = Number(p.amount_paid || p.amount || 0)
-    const statusLabel = p.status || p.payment_status || 'Paid'
+    const statusLabel = getPaymentStatusValue(p, tenant, rooms)
     payTotal += amount
 
     const dateStr = p.payment_date

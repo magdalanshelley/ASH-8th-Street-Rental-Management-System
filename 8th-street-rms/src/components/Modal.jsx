@@ -1,46 +1,24 @@
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
 import './Modal.css'
 
 function Modal({ isOpen, title, children, onClose }) {
-  const [shouldRender, setShouldRender] = useState(isOpen)
-  const [isClosing, setIsClosing] = useState(false)
-
   useEffect(() => {
-    if (isOpen) {
-      setShouldRender(true)
-      setIsClosing(false)
-      document.body.style.overflow = 'hidden'
-      return
-    }
-
-    if (shouldRender) {
-      setIsClosing(true)
-      const timer = setTimeout(() => {
-        setShouldRender(false)
-        setIsClosing(false)
-        document.body.style.overflow = ''
-      }, 180)
-
-      return () => clearTimeout(timer)
-    }
-  }, [isOpen, shouldRender])
-
-  useEffect(() => {
+    document.body.style.overflow = isOpen ? 'hidden' : ''
     return () => {
       document.body.style.overflow = ''
     }
-  }, [])
+  }, [isOpen])
 
-  if (!shouldRender) return null
+  if (!isOpen) return null
 
   return (
     <div
-      className={`modal-overlay ${isClosing ? 'closing' : ''}`}
+      className="modal-overlay"
       onMouseDown={onClose}
       role="presentation"
     >
       <section
-        className={`modal-card ${isClosing ? 'closing' : ''}`}
+        className="modal-card"
         onMouseDown={(event) => event.stopPropagation()}
         role="dialog"
         aria-modal="true"

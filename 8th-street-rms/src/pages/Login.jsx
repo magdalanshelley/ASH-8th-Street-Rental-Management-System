@@ -4,6 +4,7 @@ import { motion } from 'framer-motion'
 import { FaEnvelope, FaLock } from 'react-icons/fa'
 import { supabase } from '../supabase'
 import './Login.css'
+import logo from '../assets/logo.jpg'
 
 function Login({ user, onLogin }) {
   const [email, setEmail] = useState('')
@@ -63,7 +64,12 @@ function Login({ user, onLogin }) {
           transition={{ duration: 0.7, ease: 'easeOut' }}
         >
           <div className="auth-header">
-            <div className="auth-logo">8</div>
+            {/* ── Logo ── */}
+            <img
+              src={logo}
+              alt="8th Street RMS Logo"
+              className="auth-logo-img"
+            />
             <div className="auth-copy">
               <p className="auth-system">8th Street RMS</p>
               <h1>Welcome Back</h1>

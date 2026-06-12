@@ -1,50 +1,92 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import Modal from '../components/Modal'
 import { supabase } from '../supabase'
+import { ensureDefaultUnits, formatCurrency } from '../utils/rentalUnits'
+import {
+  buildTenantOptionLabel,
+  getPaymentAmountOptions,
+  getPaymentStatus,
+  getPaymentStatusValue,
+  getTenantMonthlyRent,
+  getTenantRoom,
+  statusClass
+} from '../utils/rmsBusiness'
+import { dispatchRmsRefresh, RMS_REFRESH_EVENT } from '../utils/rmsEvents'
 
 const emptyPayment = {
   tenant_id: '',
-  amount_paid: '',
+  amount_option: '',
+  custom_amount: '',
   payment_date: '',
-  payment_method: 'Cash',
-  payment_status: 'Paid',
-  remaining_balance: '0'
+  payment_method: 'Cash'
 }
 
 function Payments() {
   const [payments, setPayments] = useState([])
   const [tenants, setTenants] = useState([])
+  const [rooms, setRooms] = useState([])
   const [formData, setFormData] = useState(emptyPayment)
   const [editingId, setEditingId] = useState(null)
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [selectedIds, setSelectedIds] = useState([])
   const [searchTerm, setSearchTerm] = useState('')
 
+  async function refreshAll() {
+    await Promise.all([fetchPayments(), fetchTenants(), fetchRooms()])
+  }
+
   useEffect(() => {
-    fetchPayments()
-    fetchTenants()
+    refreshAll()
+    const onRefresh = () => refreshAll()
+    window.addEventListener(RMS_REFRESH_EVENT, onRefresh)
+    return () => window.removeEventListener(RMS_REFRESH_EVENT, onRefresh)
   }, [])
 
   async function fetchPayments() {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('payments')
-      .select('*')
-      .order('id')
+      .select('*, tenants(full_name, assigned_room_id, monthly_rent)')
+      .order('payment_date', { ascending: false })
+
+    if (error) {
+      console.error(error)
+      return
+    }
 
     setPayments(data || [])
   }
 
   async function fetchTenants() {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('tenants')
       .select('*')
+      .eq('status', 'Active')
+      .order('full_name')
+
+    if (error) {
+      console.error(error)
+      return
+    }
 
     setTenants(data || [])
   }
 
+  async function fetchRooms() {
+    try {
+      const data = await ensureDefaultUnits(supabase)
+      setRooms(data || [])
+    } catch (error) {
+      console.error(error)
+    }
+  }
+
   function handleChange(event) {
     const { name, value } = event.target
-    setFormData((current) => ({ ...current, [name]: value }))
+    setFormData((current) => ({
+      ...current,
+      [name]: value,
+      ...(name === 'tenant_id' ? { amount_option: '', custom_amount: '' } : {})
+    }))
   }
 
   function openAddModal() {
@@ -54,14 +96,14 @@ function Payments() {
   }
 
   function openEditModal(payment) {
+    const amount = String(payment.amount_paid || 0)
     setEditingId(payment.id)
     setFormData({
       tenant_id: payment.tenant_id || '',
-      amount_paid: payment.amount_paid || '',
+      amount_option: amount,
+      custom_amount: '',
       payment_date: payment.payment_date || '',
-      payment_method: payment.payment_method || 'Cash',
-      payment_status: payment.payment_status || 'Paid',
-      remaining_balance: payment.remaining_balance ?? '0'
+      payment_method: payment.payment_method || 'Cash'
     })
     setIsModalOpen(true)
   }
@@ -70,17 +112,52 @@ function Payments() {
     setIsModalOpen(false)
   }
 
+  function findTenant(tenantId) {
+    return tenants.find((tenant) => String(tenant.id) === String(tenantId))
+      || payments.find((payment) => String(payment.tenant_id) === String(tenantId))?.tenants
+  }
+
+  const selectedTenant = useMemo(() => findTenant(formData.tenant_id), [formData.tenant_id, tenants, payments])
+  const selectedRent = getTenantMonthlyRent(selectedTenant, rooms)
+  const selectedAmount = formData.amount_option === 'custom'
+    ? Number(formData.custom_amount || 0)
+    : Number(formData.amount_option || 0)
+  const calculatedStatus = getPaymentStatus(selectedAmount, selectedRent)
+
   async function handleSubmit(event) {
     event.preventDefault()
 
-    const payload = {
-      tenant_id: formData.tenant_id,
-      amount_paid: Number(formData.amount_paid),
-      payment_date: formData.payment_date,
-      payment_method: formData.payment_method,
-      payment_status: formData.payment_status,
-      remaining_balance: Number(formData.remaining_balance || 0)
+    if (!formData.tenant_id) {
+      alert('Select a tenant.')
+      return
     }
+
+    if (Number.isNaN(selectedAmount) || selectedAmount < 0) {
+      alert('Payment amount cannot be negative.')
+      return
+    }
+
+    const duplicatePayment = payments.find((payment) => (
+      payment.id !== editingId &&
+      String(payment.tenant_id) === String(formData.tenant_id) &&
+      payment.payment_date === formData.payment_date &&
+      Number(payment.amount_paid || 0) === selectedAmount
+    ))
+
+    if (duplicatePayment) {
+      alert('Duplicate payment entry detected for this tenant, date, and amount.')
+      return
+    }
+
+    const remainingBalance = Math.max(selectedRent - selectedAmount, 0)
+    const payload = {
+  tenant_id: formData.tenant_id,
+  amount_paid: selectedAmount,
+  payment_date: formData.payment_date,
+  payment_method: formData.payment_method,
+  payment_status: calculatedStatus,
+  remaining_balance: remainingBalance
+}
 
     const { error } = editingId
       ? await supabase.from('payments').update(payload).eq('id', editingId)
@@ -92,7 +169,8 @@ function Payments() {
     }
 
     closeModal()
-    fetchPayments()
+    await fetchPayments()
+    dispatchRmsRefresh()
   }
 
   function toggleSelectAll(event) {
@@ -117,7 +195,8 @@ function Payments() {
     }
 
     setSelectedIds((current) => current.filter((selectedId) => selectedId !== id))
-    fetchPayments()
+    await fetchPayments()
+    dispatchRmsRefresh()
   }
 
   async function deleteSelectedPayments() {
@@ -134,11 +213,8 @@ function Payments() {
     }
 
     setSelectedIds([])
-    fetchPayments()
-  }
-
-  function findTenant(tenantId) {
-    return tenants.find((tenant) => String(tenant.id) === String(tenantId))
+    await fetchPayments()
+    dispatchRmsRefresh()
   }
 
   const filteredPayments = payments.filter((payment) => {
@@ -150,7 +226,7 @@ function Payments() {
       String(payment.amount_paid || '').toLowerCase().includes(query) ||
       String(payment.payment_date || '').toLowerCase().includes(query) ||
       String(payment.payment_method || '').toLowerCase().includes(query) ||
-      String(payment.payment_status || '').toLowerCase().includes(query)
+      String(getPaymentStatusValue(payment, tenant, rooms)).toLowerCase().includes(query)
     )
   })
 
@@ -161,7 +237,7 @@ function Payments() {
       <div className="page-header">
         <div>
           <h1>Payments Management</h1>
-          <p className="page-kicker">Record and adjust payment entries without cluttering the table view.</p>
+          <p className="page-kicker">Record tenant-based payments with automatic status and balance calculations.</p>
         </div>
 
         <button className="btn-add" type="button" onClick={openAddModal}>
@@ -196,6 +272,7 @@ function Payments() {
                   <input type="checkbox" checked={allSelected} onChange={toggleSelectAll} aria-label="Select all payments" />
                 </th>
                 <th>Tenant</th>
+                <th>Assigned Unit</th>
                 <th>Amount Paid</th>
                 <th>Payment Date</th>
                 <th>Method</th>
@@ -205,36 +282,43 @@ function Payments() {
             </thead>
 
             <tbody>
-              {filteredPayments.map((payment) => (
-                <tr key={payment.id}>
-                  <td className="select-column">
-                    <input type="checkbox" checked={selectedIds.includes(payment.id)} onChange={(event) => toggleSelected(payment.id, event.target.checked)} aria-label={`Select payment ${payment.id}`} />
-                  </td>
-                  <td>{findTenant(payment.tenant_id)?.full_name || payment.tenant_id}</td>
-                  <td>PHP {payment.amount_paid}</td>
-                  <td>{payment.payment_date}</td>
-                  <td>{payment.payment_method}</td>
-                  <td>
-                    <span className={`status-badge status-${String(payment.payment_status || '').toLowerCase()}`}>
-                      {payment.payment_status}
-                    </span>
-                  </td>
-                  <td>
-                    <div className="action-group">
-                      <button className="action-btn btn-edit" type="button" onClick={() => openEditModal(payment)}>
-                        Edit
-                      </button>
-                      <button className="action-btn btn-delete" type="button" onClick={() => deletePayment(payment.id)}>
-                        Delete
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
+              {filteredPayments.map((payment) => {
+                const tenant = findTenant(payment.tenant_id)
+                const room = getTenantRoom(tenant, rooms)
+                const status = getPaymentStatusValue(payment, tenant, rooms)
+
+                return (
+                  <tr key={payment.id}>
+                    <td className="select-column">
+                      <input type="checkbox" checked={selectedIds.includes(payment.id)} onChange={(event) => toggleSelected(payment.id, event.target.checked)} aria-label={`Select payment ${payment.id}`} />
+                    </td>
+                    <td>{tenant?.full_name || payment.tenant_id}</td>
+                    <td>{room?.room_number || '-'}</td>
+                    <td>{formatCurrency(payment.amount_paid)}</td>
+                    <td>{payment.payment_date}</td>
+                    <td>{payment.payment_method}</td>
+                    <td>
+                      <span className={`status-badge status-${statusClass(status)}`}>
+                        {status}
+                      </span>
+                    </td>
+                    <td>
+                      <div className="action-group">
+                        <button className="action-btn btn-edit" type="button" onClick={() => openEditModal(payment)}>
+                          Edit
+                        </button>
+                        <button className="action-btn btn-delete" type="button" onClick={() => deletePayment(payment.id)}>
+                          Delete
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                )
+              })}
 
               {filteredPayments.length === 0 && (
                 <tr>
-                  <td className="empty-state" colSpan="7">No payments found.</td>
+                  <td className="empty-state" colSpan="8">No payments found.</td>
                 </tr>
               )}
             </tbody>
@@ -249,22 +333,40 @@ function Payments() {
       >
         <form className="modal-form" onSubmit={handleSubmit}>
           <div className="form-grid">
-            <label className="form-group">
+            <label className="form-group full-width">
               <span className="form-label">Tenant</span>
               <select className="form-input" name="tenant_id" value={formData.tenant_id} onChange={handleChange} required>
                 <option value="">Select Tenant</option>
                 {tenants.map((tenant) => (
                   <option key={tenant.id} value={tenant.id}>
-                    {tenant.full_name}
+                    {buildTenantOptionLabel(tenant, rooms)}
                   </option>
                 ))}
               </select>
             </label>
 
             <label className="form-group">
-              <span className="form-label">Amount Paid</span>
-              <input className="form-input" name="amount_paid" type="number" min="0" value={formData.amount_paid} onChange={handleChange} required />
+              <span className="form-label">Monthly Rent</span>
+              <input className="form-input" value={formatCurrency(selectedRent)} disabled />
             </label>
+
+            <label className="form-group">
+              <span className="form-label">Payment Amount</span>
+              <select className="form-input" name="amount_option" value={formData.amount_option} onChange={handleChange} required>
+                <option value="">Select Amount</option>
+                {getPaymentAmountOptions(selectedRent).map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+                <option value="custom">Custom Amount</option>
+              </select>
+            </label>
+
+            {formData.amount_option === 'custom' && (
+              <label className="form-group">
+                <span className="form-label">Custom Amount</span>
+                <input className="form-input" name="custom_amount" type="number" min="0" value={formData.custom_amount} onChange={handleChange} required />
+              </label>
+            )}
 
             <label className="form-group">
               <span className="form-label">Payment Date</span>
@@ -281,17 +383,8 @@ function Payments() {
             </label>
 
             <label className="form-group">
-              <span className="form-label">Payment Status</span>
-              <select className="form-input" name="payment_status" value={formData.payment_status} onChange={handleChange}>
-                <option value="Paid">Paid</option>
-                <option value="Pending">Pending</option>
-                <option value="Partial">Partial</option>
-              </select>
-            </label>
-
-            <label className="form-group">
-              <span className="form-label">Remaining Balance</span>
-              <input className="form-input" name="remaining_balance" type="number" min="0" value={formData.remaining_balance} onChange={handleChange} />
+              <span className="form-label">Calculated Status</span>
+              <input className="form-input" value={calculatedStatus} disabled />
             </label>
           </div>
 
