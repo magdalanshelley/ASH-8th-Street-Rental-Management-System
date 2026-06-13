@@ -45,7 +45,7 @@ function Payments() {
   async function fetchPayments() {
     const { data, error } = await supabase
       .from('payments')
-      .select('*, tenants(full_name, assigned_room_id, monthly_rent)')
+      .select('*')
       .order('payment_date', { ascending: false })
 
     if (error) {
@@ -60,7 +60,6 @@ function Payments() {
     const { data, error } = await supabase
       .from('tenants')
       .select('*')
-      .eq('status', 'Active')
       .order('full_name')
 
     if (error) {
@@ -114,10 +113,9 @@ function Payments() {
 
   function findTenant(tenantId) {
     return tenants.find((tenant) => String(tenant.id) === String(tenantId))
-      || payments.find((payment) => String(payment.tenant_id) === String(tenantId))?.tenants
   }
 
-  const selectedTenant = useMemo(() => findTenant(formData.tenant_id), [formData.tenant_id, tenants, payments])
+  const selectedTenant = useMemo(() => findTenant(formData.tenant_id), [formData.tenant_id, tenants])
   const selectedRent = getTenantMonthlyRent(selectedTenant, rooms)
   const selectedAmount = formData.amount_option === 'custom'
     ? Number(formData.custom_amount || 0)
@@ -151,13 +149,13 @@ function Payments() {
 
     const remainingBalance = Math.max(selectedRent - selectedAmount, 0)
     const payload = {
-  tenant_id: formData.tenant_id,
-  amount_paid: selectedAmount,
-  payment_date: formData.payment_date,
-  payment_method: formData.payment_method,
-  payment_status: calculatedStatus,
-  remaining_balance: remainingBalance
-}
+      tenant_id: formData.tenant_id,
+      amount_paid: selectedAmount,
+      payment_date: formData.payment_date,
+      payment_method: formData.payment_method,
+      payment_status: calculatedStatus,
+      remaining_balance: remainingBalance
+    }
 
     const { error } = editingId
       ? await supabase.from('payments').update(payload).eq('id', editingId)
@@ -169,7 +167,7 @@ function Payments() {
     }
 
     closeModal()
-    await fetchPayments()
+    await refreshAll()
     dispatchRmsRefresh()
   }
 
@@ -195,7 +193,7 @@ function Payments() {
     }
 
     setSelectedIds((current) => current.filter((selectedId) => selectedId !== id))
-    await fetchPayments()
+    await refreshAll()
     dispatchRmsRefresh()
   }
 
@@ -213,7 +211,7 @@ function Payments() {
     }
 
     setSelectedIds([])
-    await fetchPayments()
+    await refreshAll()
     dispatchRmsRefresh()
   }
 
