@@ -97,6 +97,25 @@ function Inquiries() {
     fetchInquiries()
   }
 
+  async function resolveInquiry(id) {
+    console.log('resolving id:', id, typeof id)
+
+    const { data, error } = await supabase
+      .from('inquiries')
+      .update({ status: 'Resolved' })
+      .eq('id', id)
+      .select()
+
+    console.log('result:', data, error)
+
+    if (error) {
+      alert(error.message)
+      return
+    }
+
+    fetchInquiries()
+  }
+
   function toggleSelectAll(event) {
     setSelectedIds(event.target.checked ? filteredInquiries.map((inquiry) => inquiry.id) : [])
   }
@@ -155,7 +174,9 @@ function Inquiries() {
     )
   })
 
-  const allSelected = filteredInquiries.length > 0 && filteredInquiries.every((inquiry) => selectedIds.includes(inquiry.id))
+  const allSelected =
+    filteredInquiries.length > 0 &&
+    filteredInquiries.every((inquiry) => selectedIds.includes(inquiry.id))
 
   return (
     <div className="page-shell">
@@ -194,7 +215,12 @@ function Inquiries() {
             <thead>
               <tr>
                 <th className="select-column">
-                  <input type="checkbox" checked={allSelected} onChange={toggleSelectAll} aria-label="Select all inquiries" />
+                  <input
+                    type="checkbox"
+                    checked={allSelected}
+                    onChange={toggleSelectAll}
+                    aria-label="Select all inquiries"
+                  />
                 </th>
                 <th>Tenant</th>
                 <th>Message</th>
@@ -208,7 +234,12 @@ function Inquiries() {
               {filteredInquiries.map((inquiry) => (
                 <tr key={inquiry.id}>
                   <td className="select-column">
-                    <input type="checkbox" checked={selectedIds.includes(inquiry.id)} onChange={(event) => toggleSelected(inquiry.id, event.target.checked)} aria-label={`Select inquiry ${inquiry.id}`} />
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.includes(inquiry.id)}
+                      onChange={(event) => toggleSelected(inquiry.id, event.target.checked)}
+                      aria-label={`Select inquiry ${inquiry.id}`}
+                    />
                   </td>
                   <td>{findTenant(inquiry.tenant_id)?.full_name || inquiry.tenant_id}</td>
                   <td>{inquiry.message}</td>
@@ -220,10 +251,27 @@ function Inquiries() {
                   </td>
                   <td>
                     <div className="action-group">
-                      <button className="action-btn btn-edit" type="button" onClick={() => openEditModal(inquiry)}>
+                      <button
+                        className="action-btn btn-edit"
+                        type="button"
+                        onClick={() => openEditModal(inquiry)}
+                      >
                         Edit
                       </button>
-                      <button className="action-btn btn-delete" type="button" onClick={() => deleteInquiry(inquiry.id)}>
+                      {inquiry.status !== 'Resolved' && (
+                        <button
+                          className="action-btn btn-resolve"
+                          type="button"
+                          onClick={() => resolveInquiry(inquiry.id)}
+                        >
+                          Resolve
+                        </button>
+                      )}
+                      <button
+                        className="action-btn btn-delete"
+                        type="button"
+                        onClick={() => deleteInquiry(inquiry.id)}
+                      >
                         Delete
                       </button>
                     </div>
@@ -233,7 +281,9 @@ function Inquiries() {
 
               {filteredInquiries.length === 0 && (
                 <tr>
-                  <td className="empty-state" colSpan="6">No inquiries found.</td>
+                  <td className="empty-state" colSpan="6">
+                    No inquiries found.
+                  </td>
                 </tr>
               )}
             </tbody>
@@ -250,7 +300,13 @@ function Inquiries() {
           <div className="form-grid">
             <label className="form-group">
               <span className="form-label">Tenant</span>
-              <select className="form-input" name="tenant_id" value={formData.tenant_id} onChange={handleChange} required>
+              <select
+                className="form-input"
+                name="tenant_id"
+                value={formData.tenant_id}
+                onChange={handleChange}
+                required
+              >
                 <option value="">Select Tenant</option>
                 {tenants.map((tenant) => (
                   <option key={tenant.id} value={tenant.id}>
@@ -262,17 +318,35 @@ function Inquiries() {
 
             <label className="form-group">
               <span className="form-label">Date Submitted</span>
-              <input className="form-input" name="date_submitted" type="date" value={formData.date_submitted} onChange={handleChange} required />
+              <input
+                className="form-input"
+                name="date_submitted"
+                type="date"
+                value={formData.date_submitted}
+                onChange={handleChange}
+                required
+              />
             </label>
 
             <label className="form-group full-width">
               <span className="form-label">Inquiry Message</span>
-              <textarea className="form-input" name="message" value={formData.message} onChange={handleChange} required />
+              <textarea
+                className="form-input"
+                name="message"
+                value={formData.message}
+                onChange={handleChange}
+                required
+              />
             </label>
 
             <label className="form-group">
               <span className="form-label">Status</span>
-              <select className="form-input" name="status" value={formData.status} onChange={handleChange}>
+              <select
+                className="form-input"
+                name="status"
+                value={formData.status}
+                onChange={handleChange}
+              >
                 <option value="Pending">Pending</option>
                 <option value="Resolved">Resolved</option>
                 <option value="Closed">Closed</option>
@@ -281,8 +355,12 @@ function Inquiries() {
           </div>
 
           <div className="form-actions">
-            <button className="btn-secondary" type="button" onClick={closeModal}>Cancel</button>
-            <button className="btn-primary" type="submit">Save Inquiry</button>
+            <button className="btn-secondary" type="button" onClick={closeModal}>
+              Cancel
+            </button>
+            <button className="btn-primary" type="submit">
+              Save Inquiry
+            </button>
           </div>
         </form>
       </Modal>
