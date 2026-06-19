@@ -204,22 +204,29 @@ function Reservations() {
       return
     }
 
-    const { error: tenantError } = await supabase.from('tenants').insert([{
-      full_name: reservation.applicant_name || reservation.tenant_name || reservation.guest_name,
-      assigned_room_id: reservation.room_id,
-      check_in_date: reservation.move_in_date,
-      status: 'Active',
-      reservation_id: reservation.id
-    }])
+    // FIX: capture the newly created tenant's id so we can link it
+    // back to the reservation via tenant_id.
+    const { data: newTenant, error: tenantError } = await supabase
+      .from('tenants')
+      .insert([{
+        full_name: reservation.applicant_name || reservation.tenant_name || reservation.guest_name,
+        assigned_room_id: reservation.room_id,
+        check_in_date: reservation.move_in_date,
+        status: 'Active',
+        reservation_id: reservation.id
+      }])
+      .select()
+      .single()
 
     if (tenantError) {
       alert(tenantError.message)
       return
     }
 
+    // FIX: set tenant_id on the reservation now that a tenant exists.
     const { error: reservationError } = await supabase
       .from('reservations')
-      .update({ status: 'Converted' })
+      .update({ status: 'Converted', tenant_id: newTenant.id })
       .eq('id', reservation.id)
 
     if (reservationError) {
