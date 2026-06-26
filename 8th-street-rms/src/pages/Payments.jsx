@@ -21,6 +21,103 @@ const emptyPayment = {
   payment_method: 'Cash'
 }
 
+// ── Due-date reminder helpers ─────────────────────────────────────────────────
+// Rent is considered due on the 5th of each month by default.
+// Returns { daysUntilDue, isDueThisWeek, isOverdue, dueDateLabel }
+function getRentDueInfo(tenant) {
+  if (!tenant || tenant.status !== 'Active') return null
+  const today = new Date()
+  const dueDay = 5
+  let dueDate = new Date(today.getFullYear(), today.getMonth(), dueDay)
+  // If we've passed the due date this month, the NEXT due date is next month
+  if (today > dueDate) {
+    dueDate = new Date(today.getFullYear(), today.getMonth() + 1, dueDay)
+  }
+  const diffMs = dueDate - today
+  const daysUntilDue = Math.ceil(diffMs / (1000 * 60 * 60 * 24))
+  return {
+    daysUntilDue,
+    isDueThisWeek: daysUntilDue <= 7 && daysUntilDue >= 0,
+    isOverdue: daysUntilDue < 0,
+    dueDateLabel: dueDate.toLocaleDateString('en-PH', { month: 'long', day: 'numeric', year: 'numeric' })
+  }
+}
+
+function DueReminders({ tenants, payments, rooms }) {
+  // Find active tenants who have NOT paid this calendar month yet
+  const today = new Date()
+  const thisMonth = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`
+
+  const reminders = tenants
+    .filter((t) => t.status === 'Active')
+    .map((t) => {
+      const hasPaidThisMonth = payments.some(
+        (p) =>
+          String(p.tenant_id) === String(t.id) &&
+          p.payment_date &&
+          p.payment_date.startsWith(thisMonth)
+      )
+      if (hasPaidThisMonth) return null
+      const dueInfo = getRentDueInfo(t)
+      return { tenant: t, dueInfo }
+    })
+    .filter(Boolean)
+
+  if (reminders.length === 0) return null
+
+  return (
+    <div
+      style={{
+        background: 'rgba(250,204,21,0.08)',
+        border: '1px solid rgba(250,204,21,0.25)',
+        borderRadius: 18,
+        padding: '16px 20px',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 10
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+        <span style={{ fontSize: '1.1rem' }}>⚠️</span>
+        <strong style={{ color: 'var(--warning, #facc15)' }}>
+          {reminders.length} tenant{reminders.length > 1 ? 's' : ''} haven't paid this month
+        </strong>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 8 }}>
+        {reminders.map(({ tenant, dueInfo }) => {
+          const room = getTenantRoom(tenant, rooms)
+          const isUrgent = dueInfo?.isDueThisWeek || dueInfo?.isOverdue
+          return (
+            <div
+              key={tenant.id}
+              style={{
+                background: isUrgent ? 'rgba(248,113,113,0.1)' : 'rgba(250,204,21,0.06)',
+                border: `1px solid ${isUrgent ? 'rgba(248,113,113,0.25)' : 'rgba(250,204,21,0.15)'}`,
+                borderRadius: 12,
+                padding: '10px 14px',
+                fontSize: '0.88rem'
+              }}
+            >
+              <div style={{ fontWeight: 700, color: 'var(--text-h)' }}>{tenant.full_name}</div>
+              <div style={{ color: 'var(--text)' }}>
+                Unit {room?.room_number || '—'} · Due {dueInfo?.dueDateLabel}
+              </div>
+              {dueInfo?.isOverdue && (
+                <div style={{ color: '#fda4af', fontWeight: 600, marginTop: 2 }}>Overdue!</div>
+              )}
+              {dueInfo?.isDueThisWeek && !dueInfo?.isOverdue && (
+                <div style={{ color: '#fde68a', fontWeight: 600, marginTop: 2 }}>
+                  Due in {dueInfo.daysUntilDue} day{dueInfo.daysUntilDue !== 1 ? 's' : ''}
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 function Payments() {
   const [payments, setPayments] = useState([])
   const [tenants, setTenants] = useState([])
@@ -242,6 +339,9 @@ function Payments() {
           + Add Payment
         </button>
       </div>
+
+      {/* ── Due-date reminders ── */}
+      <DueReminders tenants={tenants} payments={payments} rooms={rooms} />
 
       <div className="table-card">
         {selectedIds.length > 0 && (

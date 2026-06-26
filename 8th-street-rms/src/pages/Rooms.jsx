@@ -28,33 +28,24 @@ function Rooms() {
   const [searchTerm, setSearchTerm] = useState('')
 
   async function syncRoomStatuses() {
-    // Fetch all tenants with assigned rooms
     const { data: tenants, error: tenantError } = await supabase
       .from('tenants')
       .select('assigned_room_id, status')
 
-    if (tenantError) {
-      console.error(tenantError)
-      return
-    }
+    if (tenantError) { console.error(tenantError); return }
 
     const { data: currentRooms, error: roomError } = await supabase
       .from('rooms')
       .select('*')
 
-    if (roomError) {
-      console.error(roomError)
-      return
-    }
+    if (roomError) { console.error(roomError); return }
 
-    // Build a set of room IDs that have an active tenant
     const occupiedRoomIds = new Set(
       (tenants || [])
         .filter((t) => t.status === 'Active' && t.assigned_room_id)
         .map((t) => String(t.assigned_room_id))
     )
 
-    // Fix any room whose status doesn't match reality
     const updates = (currentRooms || []).filter((room) => {
       const shouldBeOccupied = occupiedRoomIds.has(String(room.id))
       if (shouldBeOccupied && room.status !== 'Occupied') return true
@@ -79,7 +70,6 @@ function Rooms() {
         .order('room_number')
 
       if (error) throw error
-
       setRooms(data || [])
     } catch (error) {
       console.error(error)
@@ -104,10 +94,7 @@ function Rooms() {
       await fetchRooms()
     }
     window.addEventListener(RMS_REFRESH_EVENT, handleRefresh)
-
-    return () => {
-      window.removeEventListener(RMS_REFRESH_EVENT, handleRefresh)
-    }
+    return () => window.removeEventListener(RMS_REFRESH_EVENT, handleRefresh)
   }, [])
 
   function handleChange(event) {
@@ -118,12 +105,15 @@ function Rooms() {
       ...current,
       [name]: value,
       ...(defaultUnit
-        ? {
-            room_type: defaultUnit.room_type,
-            monthly_rent: String(defaultUnit.monthly_rent)
-          }
+        ? { room_type: defaultUnit.room_type, monthly_rent: String(defaultUnit.monthly_rent) }
         : {})
     }))
+  }
+
+  function openAddModal() {
+    setEditingId(null)
+    setFormData(emptyRoom)
+    setIsModalOpen(true)
   }
 
   function openEditModal(room) {
@@ -137,9 +127,7 @@ function Rooms() {
     setIsModalOpen(true)
   }
 
-  function closeModal() {
-    setIsModalOpen(false)
-  }
+  function closeModal() { setIsModalOpen(false) }
 
   async function handleSubmit(event) {
     event.preventDefault()
@@ -150,9 +138,8 @@ function Rooms() {
           String(room.room_number).trim().toLowerCase() ===
           String(formData.room_number).trim().toLowerCase()
       )
-
       if (existingRoom) {
-        alert('This unit already exists.')
+        alert('A unit with this number already exists.')
         return
       }
     }
@@ -188,7 +175,40 @@ function Rooms() {
     await syncRoomStatuses()
     await fetchRooms()
     dispatchRmsRefresh()
-    alert('Rental unit saved successfully.')
+    alert(editingId ? 'Unit updated.' : 'Unit added successfully.')
+  }
+
+  async function deleteRoom(id) {
+    const room = rooms.find((r) => r.id === id)
+    if (room?.status === 'Occupied') {
+      alert('Cannot delete an occupied unit. Move out the tenant first.')
+      return
+    }
+    if (!window.confirm(`Delete unit ${room?.room_number}? This cannot be undone.`)) return
+
+    const { error } = await supabase.from('rooms').delete().eq('id', id)
+    if (error) { alert(error.message); return }
+
+    setSelectedIds((cur) => cur.filter((x) => x !== id))
+    await fetchRooms()
+    dispatchRmsRefresh()
+  }
+
+  async function deleteSelected() {
+    if (selectedIds.length === 0) return
+    const occupied = rooms.filter((r) => selectedIds.includes(r.id) && r.status === 'Occupied')
+    if (occupied.length > 0) {
+      alert(`${occupied.length} unit(s) are occupied and cannot be deleted.`)
+      return
+    }
+    if (!window.confirm(`Delete ${selectedIds.length} unit(s)?`)) return
+
+    const { error } = await supabase.from('rooms').delete().in('id', selectedIds)
+    if (error) { alert(error.message); return }
+
+    setSelectedIds([])
+    await fetchRooms()
+    dispatchRmsRefresh()
   }
 
   function toggleSelectAll(event) {
@@ -203,7 +223,6 @@ function Rooms() {
 
   const filteredRooms = rooms.filter((room) => {
     const query = searchTerm.toLowerCase()
-
     return (
       String(room.room_number || '').toLowerCase().includes(query) ||
       String(room.room_type || '').toLowerCase().includes(query) ||
@@ -211,8 +230,10 @@ function Rooms() {
     )
   })
 
-  const allSelected =
-    filteredRooms.length > 0 && filteredRooms.every((room) => selectedIds.includes(room.id))
+  const allSelected = filteredRooms.length > 0 && filteredRooms.every((room) => selectedIds.includes(room.id))
+
+  const availableCount = rooms.filter((r) => r.status === 'Available').length
+  const occupiedCount = rooms.filter((r) => r.status === 'Occupied').length
 
   return (
     <div className="page-shell">
@@ -222,23 +243,41 @@ function Rooms() {
           <p className="page-kicker">Manage boarding house rooms and rental spaces for 8TH Street.</p>
         </div>
 
-        <button
-          className="btn-add"
-          type="button"
-          onClick={async () => {
-            await syncRoomStatuses()
-            await fetchRooms()
-          }}
-        >
-          Refresh Units
-        </button>
+        <div className="action-group">
+          <button className="btn-add" type="button" onClick={openAddModal}>
+            + Add Unit
+          </button>
+          <button
+            className="btn-secondary"
+            type="button"
+            onClick={async () => { await syncRoomStatuses(); await fetchRooms() }}
+          >
+            Refresh Units
+          </button>
+        </div>
+      </div>
+
+      {/* Summary strip */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
+        {[
+          { label: 'Total Units', value: rooms.length, color: 'var(--primary)' },
+          { label: 'Occupied', value: occupiedCount, color: 'var(--danger)' },
+          { label: 'Available', value: availableCount, color: 'var(--success)' }
+        ].map(({ label, value, color }) => (
+          <div key={label} className="table-card" style={{ padding: '18px 22px', display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <span style={{ color: 'var(--text)', fontSize: '0.88rem' }}>{label}</span>
+            <strong style={{ fontSize: '1.5rem', color }}>{value}</strong>
+          </div>
+        ))}
       </div>
 
       <div className="table-card">
         {selectedIds.length > 0 && (
           <div className="bulk-toolbar">
             <span>{selectedIds.length} selected</span>
-            <span>Fixed inventory cannot be deleted.</span>
+            <button className="action-btn btn-delete" type="button" onClick={deleteSelected}>
+              Delete Selected
+            </button>
           </div>
         )}
 
@@ -256,12 +295,7 @@ function Rooms() {
             <thead>
               <tr>
                 <th className="select-column">
-                  <input
-                    type="checkbox"
-                    checked={allSelected}
-                    onChange={toggleSelectAll}
-                    aria-label="Select all rental units"
-                  />
+                  <input type="checkbox" checked={allSelected} onChange={toggleSelectAll} aria-label="Select all rental units" />
                 </th>
                 <th>Unit Number</th>
                 <th>Unit Type</th>
@@ -294,12 +328,17 @@ function Rooms() {
                     </td>
                     <td>
                       <div className="action-group">
-                        <button
-                          className="action-btn btn-edit"
-                          type="button"
-                          onClick={() => openEditModal(room)}
-                        >
+                        <button className="action-btn btn-edit" type="button" onClick={() => openEditModal(room)}>
                           Edit
+                        </button>
+                        <button
+                          className="action-btn btn-delete"
+                          type="button"
+                          onClick={() => deleteRoom(room.id)}
+                          disabled={room.status === 'Occupied'}
+                          title={room.status === 'Occupied' ? 'Move out tenant first' : 'Delete unit'}
+                        >
+                          Delete
                         </button>
                       </div>
                     </td>
@@ -309,9 +348,7 @@ function Rooms() {
 
               {filteredRooms.length === 0 && (
                 <tr>
-                  <td className="empty-state" colSpan="6">
-                    No rental units found.
-                  </td>
+                  <td className="empty-state" colSpan="6">No rental units found.</td>
                 </tr>
               )}
             </tbody>
@@ -319,7 +356,7 @@ function Rooms() {
         </div>
       </div>
 
-      <Modal isOpen={isModalOpen} title="Edit Rental Unit" onClose={closeModal}>
+      <Modal isOpen={isModalOpen} title={editingId ? 'Edit Rental Unit' : 'Add Rental Unit'} onClose={closeModal}>
         <form className="modal-form" onSubmit={handleSubmit}>
           <div className="form-grid">
             <label className="form-group">
@@ -331,6 +368,7 @@ function Rooms() {
                 value={formData.room_number}
                 onChange={handleChange}
                 required
+                placeholder="e.g. Room 9, RS-3"
               />
               <datalist id="unit-number-options">
                 {EIGHTH_STREET_UNITS.map((unit) => (
@@ -341,16 +379,9 @@ function Rooms() {
 
             <label className="form-group">
               <span className="form-label">Unit Type</span>
-              <select
-                className="form-input"
-                name="room_type"
-                value={formData.room_type}
-                onChange={handleChange}
-              >
+              <select className="form-input" name="room_type" value={formData.room_type} onChange={handleChange}>
                 {UNIT_TYPES.map((type) => (
-                  <option key={type} value={type}>
-                    {type}
-                  </option>
+                  <option key={type} value={type}>{type}</option>
                 ))}
               </select>
             </label>
@@ -380,11 +411,9 @@ function Rooms() {
           </div>
 
           <div className="form-actions">
-            <button className="btn-secondary" type="button" onClick={closeModal}>
-              Cancel
-            </button>
+            <button className="btn-secondary" type="button" onClick={closeModal}>Cancel</button>
             <button className="btn-primary" type="submit">
-              Save Rental Unit
+              {editingId ? 'Save Changes' : 'Add Unit'}
             </button>
           </div>
         </form>

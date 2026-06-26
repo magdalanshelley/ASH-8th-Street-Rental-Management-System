@@ -10,19 +10,23 @@ import {
   FaChartBar,
   FaBars,
   FaUserCircle,
-  FaSignOutAlt
+  FaSignOutAlt,
+  FaFileInvoiceDollar,
+  FaTools
 } from 'react-icons/fa'
 import './Sidebar.css'
 import logo from '../assets/logo.jpg'
 
 const MENU = [
-  { name: 'Dashboard', to: '/', icon: FaHome },
-  { name: 'Rental Units', to: '/rooms', icon: FaDoorOpen },
-  { name: 'Tenants', to: '/tenants', icon: FaUsers },
+  { name: 'Dashboard',    to: '/',            icon: FaHome },
+  { name: 'Rental Units', to: '/rooms',        icon: FaDoorOpen },
+  { name: 'Tenants',      to: '/tenants',      icon: FaUsers },
   { name: 'Reservations', to: '/reservations', icon: FaCalendarAlt },
-  { name: 'Payments', to: '/payments', icon: FaMoneyBillWave },
-  { name: 'Inquiries', to: '/inquiries', icon: FaEnvelope },
-  { name: 'Reports', to: '/reports', icon: FaChartBar }
+  { name: 'Payments',     to: '/payments',     icon: FaMoneyBillWave },
+  { name: 'Bills',        to: '/bills',        icon: FaFileInvoiceDollar },
+  { name: 'Maintenance',  to: '/maintenance',  icon: FaTools },
+  { name: 'Inquiries',    to: '/inquiries',    icon: FaEnvelope },
+  { name: 'Reports',      to: '/reports',      icon: FaChartBar }
 ]
 
 function Sidebar({ collapsed = false, onToggle = () => {}, user, onLogout = () => {} }) {

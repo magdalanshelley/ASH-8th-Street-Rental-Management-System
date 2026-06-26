@@ -15,6 +15,8 @@ import Payments from './pages/Payments'
 import Inquiries from './pages/Inquiries'
 import Reports from './pages/Reports'
 import TenantAccount from './pages/TenantAccount'
+import Bills from './pages/Bills'
+import Maintenance from './pages/Maintenance'
 import Login from './pages/Login'
 import { supabase } from './supabase'
 
@@ -36,10 +38,7 @@ function App() {
 
   useEffect(() => {
     const initAuth = async () => {
-      const {
-        data: { session }
-      } = await supabase.auth.getSession()
-
+      const { data: { session } } = await supabase.auth.getSession()
       setUser(session?.user ?? null)
       setAuthLoading(false)
     }
@@ -49,10 +48,7 @@ function App() {
     })
 
     initAuth()
-
-    return () => {
-      authListener?.subscription?.unsubscribe()
-    }
+    return () => { authListener?.subscription?.unsubscribe() }
   }, [])
 
   const handleLogout = async () => {
@@ -62,43 +58,45 @@ function App() {
   }
 
   return (
-      <div className="app-shell">
-        {user && <Sidebar collapsed={collapsed} onToggle={handleToggle} user={user} onLogout={handleLogout} />}
+    <div className="app-shell">
+      {user && <Sidebar collapsed={collapsed} onToggle={handleToggle} user={user} onLogout={handleLogout} />}
 
-        <main
-          className="app-content"
-          style={{
-            marginLeft: user ? (collapsed ? '112px' : '282px') : 0,
-            padding: isLoginPage ? 0 : '24px'
-          }}
-        >
-          {!isLoginPage && (
-            <div className="app-toolbar">
-              <button className="theme-toggle" type="button" onClick={toggleTheme}>
-                {theme === 'dark' ? <FaSun /> : <FaMoon />}
-                <span>{theme === 'dark' ? 'Light Mode' : 'Dark Mode'}</span>
-              </button>
-            </div>
-          )}
+      <main
+        className="app-content"
+        style={{
+          marginLeft: user ? (collapsed ? '112px' : '282px') : 0,
+          padding: isLoginPage ? 0 : '24px'
+        }}
+      >
+        {!isLoginPage && (
+          <div className="app-toolbar">
+            <button className="theme-toggle" type="button" onClick={toggleTheme}>
+              {theme === 'dark' ? <FaSun /> : <FaMoon />}
+              <span>{theme === 'dark' ? 'Light Mode' : 'Dark Mode'}</span>
+            </button>
+          </div>
+        )}
 
-          <Routes>
-            <Route path="/login" element={<Login user={user} onLogin={setUser} />} />
+        <Routes>
+          <Route path="/login" element={<Login user={user} onLogin={setUser} />} />
 
-            <Route element={<ProtectedRoute user={user} loading={authLoading} />}>
-              <Route path="/" element={<Dashboard />} />
-              <Route path="/rooms" element={<Rooms />} />
-              <Route path="/tenants" element={<Tenants />} />
-              <Route path="/tenant-account/:id" element={<TenantAccount />} />
-              <Route path="/reservations" element={<Reservations />} />
-              <Route path="/payments" element={<Payments />} />
-              <Route path="/inquiries" element={<Inquiries />} />
-              <Route path="/reports" element={<Reports />} />
-            </Route>
+          <Route element={<ProtectedRoute user={user} loading={authLoading} />}>
+            <Route path="/" element={<Dashboard />} />
+            <Route path="/rooms" element={<Rooms />} />
+            <Route path="/tenants" element={<Tenants />} />
+            <Route path="/tenant-account/:id" element={<TenantAccount />} />
+            <Route path="/reservations" element={<Reservations />} />
+            <Route path="/payments" element={<Payments />} />
+            <Route path="/inquiries" element={<Inquiries />} />
+            <Route path="/reports" element={<Reports />} />
+            <Route path="/bills" element={<Bills />} />
+            <Route path="/maintenance" element={<Maintenance />} />
+          </Route>
 
-            <Route path="*" element={<Navigate to={user ? '/' : '/login'} replace />} />
-          </Routes>
-        </main>
-      </div>
+          <Route path="*" element={<Navigate to={user ? '/' : '/login'} replace />} />
+        </Routes>
+      </main>
+    </div>
   )
 }
 

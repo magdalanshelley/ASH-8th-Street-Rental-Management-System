@@ -11,7 +11,10 @@ import {
   FaBuilding,
   FaStore,
   FaFileAlt,
-  FaSpinner
+  FaSpinner,
+  FaStar,
+  FaTools,
+  FaFileInvoiceDollar
 } from 'react-icons/fa'
 import { supabase } from '../supabase'
 import { ensureDefaultUnits, formatCurrency, getUnitTypeLabel } from '../utils/rentalUnits'
@@ -22,8 +25,25 @@ import './Dashboard.css'
 
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 
+// ── Payer rating helper (mirrors TenantAccount) ───────────────────────────────
+function getPayerRating(payments, monthlyRent) {
+  if (!payments.length) return 'No History'
+  const paid = payments.filter((p) => Number(p.amount_paid || 0) >= monthlyRent).length
+  const ratio = paid / payments.length
+  if (ratio >= 0.9) return 'Good Payer'
+  if (ratio >= 0.6) return 'Average Payer'
+  return 'Late / Partial'
+}
+
+function payerRatingClass(rating) {
+  if (rating === 'Good Payer') return 'paid'
+  if (rating === 'Average Payer') return 'partial'
+  if (rating === 'Late / Partial') return 'pending'
+  return 'inactive'
+}
+
 function RevenueChart({ payments }) {
-  const now   = new Date()
+  const now = new Date()
   const slots = Array.from({ length: 6 }, (_, i) => {
     const d = new Date(now.getFullYear(), now.getMonth() - (5 - i), 1)
     return { year: d.getFullYear(), month: d.getMonth(), label: MONTHS[d.getMonth()] }
@@ -31,7 +51,7 @@ function RevenueChart({ payments }) {
   const grouped = {}
   for (const p of payments) {
     if (!p.payment_date) continue
-    const d   = new Date(p.payment_date)
+    const d = new Date(p.payment_date)
     const key = `${d.getFullYear()}-${d.getMonth()}`
     grouped[key] = (grouped[key] || 0) + Number(p.amount_paid || p.amount || 0)
   }
@@ -75,18 +95,21 @@ export default function Reports() {
   const [rooms, setRooms]         = useState([])
   const [tenants, setTenants]     = useState([])
   const [payments, setPayments]   = useState([])
+  const [bills, setBills]         = useState([])
   const [exporting, setExporting] = useState(false)
   const [exportMsg, setExportMsg] = useState('')
 
   async function load() {
-    const [r, { data: t }, { data: p }] = await Promise.all([
+    const [r, { data: t }, { data: p }, { data: b }] = await Promise.all([
       ensureDefaultUnits(supabase),
       supabase.from('tenants').select('*'),
-      supabase.from('payments').select('*, tenants(full_name, assigned_room_id)')
+      supabase.from('payments').select('*, tenants(full_name, assigned_room_id)'),
+      supabase.from('bills').select('*').catch(() => ({ data: [] }))
     ])
     setRooms(r || [])
     setTenants(t || [])
     setPayments(p || [])
+    setBills(b || [])
   }
 
   useEffect(() => { load() }, [])
@@ -109,10 +132,58 @@ export default function Reports() {
     const active  = tenants.filter(t => t.status === 'Active' || t.is_active).length
     const former  = tenants.length - active
     const available = rooms.filter(unit => unit.status === 'Available').length
-    const reserved = rooms.filter(unit => unit.status === 'Reserved').length
-    const occupied = rooms.filter(unit => unit.status === 'Occupied').length
-    return { totalRevenue, boardingRev, rentalRev, paid, pending, partial, active, former, available, reserved, occupied }
-  }, [rooms, tenants, payments])
+    const reserved  = rooms.filter(unit => unit.status === 'Reserved').length
+    const occupied  = rooms.filter(unit => unit.status === 'Occupied').length
+
+    // Bills analytics
+    const totalBillsUnpaid = bills.filter(b => b.status !== 'Paid').reduce((s, b) => s + Number(b.amount || 0), 0)
+    const overdueBills = bills.filter(b => b.status === 'Overdue').length
+
+    return { totalRevenue, boardingRev, rentalRev, paid, pending, partial, active, former, available, reserved, occupied, totalBillsUnpaid, overdueBills }
+  }, [rooms, tenants, payments, bills])
+
+  // ── Tenant payment summary with payer rating ──────────────────────────────
+  const tenantSummaries = useMemo(() => {
+    const unitMap = new Map(rooms.map(u => [String(u.id), u]))
+    return tenants
+      .filter(t => t.status === 'Active')
+      .map(t => {
+        const tenantPayments = payments.filter(p => String(p.tenant_id) === String(t.id))
+        const room = unitMap.get(String(t.assigned_room_id))
+        const monthlyRent = Number(room?.monthly_rent || 0)
+        const totalPaid = tenantPayments.reduce((s, p) => s + Number(p.amount_paid || 0), 0)
+        const rating = getPayerRating(tenantPayments, monthlyRent)
+
+        // Check if paid this month
+        const today = new Date()
+        const thisMonth = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`
+        const paidThisMonth = tenantPayments.some(p => p.payment_date?.startsWith(thisMonth))
+
+        // Unpaid bills
+        const tenantBills = bills.filter(b => String(b.tenant_id) === String(t.id))
+        const unpaidBills = tenantBills.filter(b => b.status !== 'Paid').reduce((s, b) => s + Number(b.amount || 0), 0)
+
+        return {
+          tenant: t,
+          room,
+          monthlyRent,
+          totalPaid,
+          rating,
+          paidThisMonth,
+          unpaidBills,
+          paymentCount: tenantPayments.length
+        }
+      })
+      .sort((a, b) => {
+        // Sort: overdue first, then average, then good
+        const order = { 'Late / Partial': 0, 'Average Payer': 1, 'Good Payer': 2, 'No History': 3 }
+        return (order[a.rating] ?? 3) - (order[b.rating] ?? 3)
+      })
+  }, [tenants, payments, rooms, bills])
+
+  const goodPayers = tenantSummaries.filter(s => s.rating === 'Good Payer').length
+  const latePayers = tenantSummaries.filter(s => s.rating === 'Late / Partial').length
+  const unpaidThisMonth = tenantSummaries.filter(s => !s.paidThisMonth).length
 
   async function handleExport() {
     setExporting(true)
@@ -136,14 +207,20 @@ export default function Reports() {
     { title: 'Partial',          value: a.partial,       icon: FaExclamationTriangle, accent: 'var(--danger)',  sub: 'Incomplete' },
   ]
   const tenantCards = [
-    { title: 'Total Tenants',  value: tenants.length, icon: FaUsers,     accent: 'var(--primary)', sub: 'Ever registered' },
-    { title: 'Active Tenants', value: a.active,       icon: FaUserCheck, accent: 'var(--success)', sub: 'Currently renting' },
-    { title: 'Former Tenants', value: a.former,       icon: FaUserTimes, accent: 'var(--info)',    sub: 'Past tenants' },
+    { title: 'Total Tenants',    value: tenants.length,  icon: FaUsers,     accent: 'var(--primary)', sub: 'Ever registered' },
+    { title: 'Active Tenants',   value: a.active,        icon: FaUserCheck, accent: 'var(--success)', sub: 'Currently renting' },
+    { title: 'Former Tenants',   value: a.former,        icon: FaUserTimes, accent: 'var(--info)',    sub: 'Past tenants' },
   ]
   const inventoryCards = [
-    { title: 'Available Units', value: a.available, icon: FaBuilding, accent: 'var(--info)', sub: 'Ready to reserve' },
-    { title: 'Reserved Units', value: a.reserved, icon: FaClock, accent: 'var(--warning)', sub: 'Reservation hold' },
-    { title: 'Occupied Units', value: a.occupied, icon: FaUserCheck, accent: 'var(--danger)', sub: 'Active tenant assigned' },
+    { title: 'Available Units',  value: a.available, icon: FaBuilding,  accent: 'var(--info)',    sub: 'Ready to reserve' },
+    { title: 'Reserved Units',   value: a.reserved,  icon: FaClock,     accent: 'var(--warning)', sub: 'Reservation hold' },
+    { title: 'Occupied Units',   value: a.occupied,  icon: FaUserCheck, accent: 'var(--danger)',  sub: 'Active tenant assigned' },
+  ]
+  const payerCards = [
+    { title: 'Good Payers',       value: goodPayers,      icon: FaStar,                  accent: 'var(--success)', sub: '≥90% on-time' },
+    { title: 'Late / Partial',    value: latePayers,       icon: FaExclamationTriangle,   accent: 'var(--danger)',  sub: 'Needs follow-up' },
+    { title: "Unpaid This Month", value: unpaidThisMonth,  icon: FaClock,                 accent: 'var(--warning)', sub: 'No payment yet' },
+    { title: 'Overdue Bills',     value: a.overdueBills,   icon: FaFileInvoiceDollar,     accent: 'var(--danger)',  sub: 'Utilities overdue' },
   ]
 
   return (
@@ -170,6 +247,15 @@ export default function Reports() {
       <div className="report-section-label">Tenant Analytics</div>
       <section className="cards-grid cards-grid--3">
         {tenantCards.map((c, i) => (
+          <motion.div key={c.title} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}>
+            <ReportCard {...c} />
+          </motion.div>
+        ))}
+      </section>
+
+      <div className="report-section-label">Payer & Bills Analytics</div>
+      <section className="cards-grid cards-grid--4">
+        {payerCards.map((c, i) => (
           <motion.div key={c.title} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}>
             <ReportCard {...c} />
           </motion.div>
@@ -224,6 +310,58 @@ export default function Reports() {
         </div>
       </section>
 
+      {/* ── Tenant Payer Overview ── */}
+      <div className="white-card report-wide">
+        <h3>Tenant Payer Overview</h3>
+        <p style={{ color: 'var(--text)', fontSize: '0.9rem', marginBottom: 16 }}>
+          Active tenants sorted by payment reliability. Overdue / partial payers shown first.
+        </p>
+        <div className="table-scroll">
+          <table className="modern-table">
+            <thead>
+              <tr>
+                <th>Tenant</th>
+                <th>Unit</th>
+                <th>Monthly Rent</th>
+                <th>Total Paid</th>
+                <th>Payments</th>
+                <th>Unpaid Bills</th>
+                <th>Paid This Month</th>
+                <th>Payer Rating</th>
+              </tr>
+            </thead>
+            <tbody>
+              {tenantSummaries.map(({ tenant, room, monthlyRent, totalPaid, rating, paidThisMonth, unpaidBills, paymentCount }) => (
+                <tr key={tenant.id}>
+                  <td><strong>{tenant.full_name}</strong></td>
+                  <td>{room?.room_number || '—'}</td>
+                  <td>{formatCurrency(monthlyRent)}</td>
+                  <td>{formatCurrency(totalPaid)}</td>
+                  <td>{paymentCount}</td>
+                  <td style={{ color: unpaidBills > 0 ? '#fda4af' : 'inherit' }}>
+                    {unpaidBills > 0 ? formatCurrency(unpaidBills) : '—'}
+                  </td>
+                  <td>
+                    <span className={`status-badge status-${paidThisMonth ? 'paid' : 'pending'}`}>
+                      {paidThisMonth ? 'Yes' : 'No'}
+                    </span>
+                  </td>
+                  <td>
+                    <span className={`status-badge status-${payerRatingClass(rating)}`}>
+                      {rating}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+              {tenantSummaries.length === 0 && (
+                <tr><td className="empty-state" colSpan="8">No active tenants.</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* ── Unit Inventory ── */}
       <div className="white-card report-wide">
         <h3>Unit Inventory</h3>
         <div className="table-scroll">
@@ -245,6 +383,46 @@ export default function Reports() {
                 )
               })}
               {rooms.length === 0 && <tr><td className="empty-state" colSpan="5">No rental units found.</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* ── Bills Overview ── */}
+      <div className="white-card report-wide">
+        <h3>Bills Overview</h3>
+        <p style={{ color: 'var(--text)', fontSize: '0.9rem', marginBottom: 16 }}>
+          Unpaid and overdue bills across all tenants.
+          Total unpaid: <strong style={{ color: '#fda4af' }}>{formatCurrency(a.totalBillsUnpaid)}</strong>
+        </p>
+        <div className="table-scroll">
+          <table className="modern-table">
+            <thead>
+              <tr><th>Tenant</th><th>Bill Type</th><th>Amount</th><th>Month</th><th>Due Date</th><th>Status</th></tr>
+            </thead>
+            <tbody>
+              {bills
+                .filter(b => b.status !== 'Paid')
+                .map(bill => {
+                  const tenant = tenants.find(t => String(t.id) === String(bill.tenant_id))
+                  return (
+                    <tr key={bill.id}>
+                      <td>{tenant?.full_name || '—'}</td>
+                      <td>{bill.bill_type}</td>
+                      <td>₱{Number(bill.amount || 0).toLocaleString()}</td>
+                      <td>{bill.billing_month || '—'}</td>
+                      <td>{bill.due_date || '—'}</td>
+                      <td>
+                        <span className={`status-badge status-${bill.status === 'Overdue' ? 'pending' : 'partial'}`}>
+                          {bill.status}
+                        </span>
+                      </td>
+                    </tr>
+                  )
+                })}
+              {bills.filter(b => b.status !== 'Paid').length === 0 && (
+                <tr><td className="empty-state" colSpan="6">All bills are paid. 🎉</td></tr>
+              )}
             </tbody>
           </table>
         </div>
@@ -278,7 +456,7 @@ export default function Reports() {
         <div className="export-sheets-preview">
           {[
             { sheet: 'Summary',         desc: 'KPI overview — occupancy, financials, tenants' },
-            { sheet: 'Unit Inventory',  desc: 'All 8 units with rent, status & current tenant' },
+            { sheet: 'Unit Inventory',  desc: 'All units with rent, status & current tenant' },
             { sheet: 'Tenant List',     desc: 'Contact info, move-in dates, balance due' },
             { sheet: 'Payment History', desc: 'Every payment sorted newest-first with status' },
             { sheet: 'Monthly Revenue', desc: 'Month-by-month boarding vs rental space totals' },
