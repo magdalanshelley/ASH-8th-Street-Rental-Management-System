@@ -14,7 +14,8 @@ import {
   FaSpinner,
   FaStar,
   FaTools,
-  FaFileInvoiceDollar
+  FaFileInvoiceDollar,
+  FaSync
 } from 'react-icons/fa'
 import { supabase } from '../supabase'
 import { ensureDefaultUnits, formatCurrency, getUnitTypeLabel } from '../utils/rentalUnits'
@@ -92,24 +93,41 @@ function ReportCard({ title, value, icon: Icon, accent, sub }) {
 }
 
 export default function Reports() {
-  const [rooms, setRooms]         = useState([])
-  const [tenants, setTenants]     = useState([])
-  const [payments, setPayments]   = useState([])
-  const [bills, setBills]         = useState([])
-  const [exporting, setExporting] = useState(false)
-  const [exportMsg, setExportMsg] = useState('')
+  const [rooms, setRooms]               = useState([])
+  const [tenants, setTenants]           = useState([])
+  const [payments, setPayments]         = useState([])
+  const [bills, setBills]               = useState([])
+  const [maintenanceLogs, setMaintenance] = useState([])
+  const [loading, setLoading]           = useState(true)
+  const [exporting, setExporting]       = useState(false)
+  const [exportMsg, setExportMsg]       = useState('')
 
   async function load() {
-    const [r, { data: t }, { data: p }, { data: b }] = await Promise.all([
-      ensureDefaultUnits(supabase),
-      supabase.from('tenants').select('*'),
-      supabase.from('payments').select('*, tenants(full_name, assigned_room_id)'),
-      supabase.from('bills').select('*').catch(() => ({ data: [] }))
-    ])
-    setRooms(r || [])
-    setTenants(t || [])
-    setPayments(p || [])
-    setBills(b || [])
+    setLoading(true)
+    try {
+      const [roomsData, tenantsRes, paymentsRes, billsRes, maintenanceRes] = await Promise.all([
+        ensureDefaultUnits(supabase),
+        supabase.from('tenants').select('*'),
+        supabase.from('payments').select('*, tenants(full_name, assigned_room_id)'),
+        supabase.from('bills').select('*'),
+        supabase.from('maintenance_logs').select('*')
+      ])
+
+      if (tenantsRes.error)    console.error('Reports: tenants query failed', tenantsRes.error)
+      if (paymentsRes.error)   console.error('Reports: payments query failed', paymentsRes.error)
+      if (billsRes.error)      console.error('Reports: bills query failed', billsRes.error)
+      if (maintenanceRes.error) console.error('Reports: maintenance query failed', maintenanceRes.error)
+
+      setRooms(roomsData || [])
+      setTenants(tenantsRes.data || [])
+      setPayments(paymentsRes.data || [])
+      setBills(billsRes.data || [])
+      setMaintenance(maintenanceRes.data || [])
+    } catch (err) {
+      console.error('Reports: load failed', err)
+    } finally {
+      setLoading(false)
+    }
   }
 
   useEffect(() => { load() }, [])
@@ -118,17 +136,21 @@ export default function Reports() {
     const unitMap    = new Map(rooms.map(u => [String(u.id), u]))
     const tenantById = new Map(tenants.map(t => [String(t.id), t]))
     const isRS = r => r && (r.room_type === 'rental_space' || r.room_type === 'commercial' || (r.room_number||'').startsWith('RS'))
+
     let boardingRev = 0, rentalRev = 0
     for (const p of payments) {
       const tenant = p.tenants || tenantById.get(String(p.tenant_id))
+      // Always look up the room from the authoritative unitMap using the tenant's assigned_room_id
       const room   = tenant?.assigned_room_id ? unitMap.get(String(tenant.assigned_room_id)) : null
       const amt    = Number(p.amount_paid || p.amount || 0)
       if (isRS(room)) rentalRev += amt; else boardingRev += amt
     }
     const totalRevenue = boardingRev + rentalRev
+
     const paid    = payments.filter(p => getPaymentStatusValue(p, p.tenants || tenantById.get(String(p.tenant_id)), rooms).toLowerCase() === 'paid').length
     const pending = payments.filter(p => getPaymentStatusValue(p, p.tenants || tenantById.get(String(p.tenant_id)), rooms).toLowerCase() === 'pending').length
     const partial = payments.filter(p => getPaymentStatusValue(p, p.tenants || tenantById.get(String(p.tenant_id)), rooms).toLowerCase() === 'partial').length
+
     const active  = tenants.filter(t => t.status === 'Active' || t.is_active).length
     const former  = tenants.length - active
     const available = rooms.filter(unit => unit.status === 'Available').length
@@ -139,8 +161,22 @@ export default function Reports() {
     const totalBillsUnpaid = bills.filter(b => b.status !== 'Paid').reduce((s, b) => s + Number(b.amount || 0), 0)
     const overdueBills = bills.filter(b => b.status === 'Overdue').length
 
-    return { totalRevenue, boardingRev, rentalRev, paid, pending, partial, active, former, available, reserved, occupied, totalBillsUnpaid, overdueBills }
-  }, [rooms, tenants, payments, bills])
+    // Maintenance analytics
+    const pendingMaintenance   = maintenanceLogs.filter(l => l.status === 'Pending').length
+    const inProgressMaintenance = maintenanceLogs.filter(l => l.status === 'In Progress').length
+    const totalMaintenanceCost = maintenanceLogs
+      .filter(l => l.status !== 'Cancelled')
+      .reduce((s, l) => s + Number(l.cost || 0), 0)
+
+    return {
+      totalRevenue, boardingRev, rentalRev,
+      paid, pending, partial,
+      active, former,
+      available, reserved, occupied,
+      totalBillsUnpaid, overdueBills,
+      pendingMaintenance, inProgressMaintenance, totalMaintenanceCost
+    }
+  }, [rooms, tenants, payments, bills, maintenanceLogs])
 
   // ── Tenant payment summary with payer rating ──────────────────────────────
   const tenantSummaries = useMemo(() => {
@@ -154,12 +190,10 @@ export default function Reports() {
         const totalPaid = tenantPayments.reduce((s, p) => s + Number(p.amount_paid || 0), 0)
         const rating = getPayerRating(tenantPayments, monthlyRent)
 
-        // Check if paid this month
         const today = new Date()
         const thisMonth = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`
         const paidThisMonth = tenantPayments.some(p => p.payment_date?.startsWith(thisMonth))
 
-        // Unpaid bills
         const tenantBills = bills.filter(b => String(b.tenant_id) === String(t.id))
         const unpaidBills = tenantBills.filter(b => b.status !== 'Paid').reduce((s, b) => s + Number(b.amount || 0), 0)
 
@@ -175,21 +209,21 @@ export default function Reports() {
         }
       })
       .sort((a, b) => {
-        // Sort: overdue first, then average, then good
         const order = { 'Late / Partial': 0, 'Average Payer': 1, 'Good Payer': 2, 'No History': 3 }
         return (order[a.rating] ?? 3) - (order[b.rating] ?? 3)
       })
   }, [tenants, payments, rooms, bills])
 
-  const goodPayers = tenantSummaries.filter(s => s.rating === 'Good Payer').length
-  const latePayers = tenantSummaries.filter(s => s.rating === 'Late / Partial').length
+  const goodPayers     = tenantSummaries.filter(s => s.rating === 'Good Payer').length
+  const latePayers     = tenantSummaries.filter(s => s.rating === 'Late / Partial').length
   const unpaidThisMonth = tenantSummaries.filter(s => !s.paidThisMonth).length
 
   async function handleExport() {
     setExporting(true)
     setExportMsg('Building your report…')
     try {
-      await exportRMSReport({ rooms, tenants, payments })
+      // Pass all data sources so every sheet is fully populated
+      await exportRMSReport({ rooms, tenants, payments, bills, maintenanceLogs })
       setExportMsg('Downloaded successfully!')
     } catch (err) {
       console.error(err)
@@ -217,11 +251,24 @@ export default function Reports() {
     { title: 'Occupied Units',   value: a.occupied,  icon: FaUserCheck, accent: 'var(--danger)',  sub: 'Active tenant assigned' },
   ]
   const payerCards = [
-    { title: 'Good Payers',       value: goodPayers,      icon: FaStar,                  accent: 'var(--success)', sub: '≥90% on-time' },
-    { title: 'Late / Partial',    value: latePayers,       icon: FaExclamationTriangle,   accent: 'var(--danger)',  sub: 'Needs follow-up' },
-    { title: "Unpaid This Month", value: unpaidThisMonth,  icon: FaClock,                 accent: 'var(--warning)', sub: 'No payment yet' },
-    { title: 'Overdue Bills',     value: a.overdueBills,   icon: FaFileInvoiceDollar,     accent: 'var(--danger)',  sub: 'Utilities overdue' },
+    { title: 'Good Payers',        value: goodPayers,              icon: FaStar,                accent: 'var(--success)', sub: '≥90% on-time' },
+    { title: 'Late / Partial',     value: latePayers,              icon: FaExclamationTriangle, accent: 'var(--danger)',  sub: 'Needs follow-up' },
+    { title: 'Unpaid This Month',  value: unpaidThisMonth,         icon: FaClock,               accent: 'var(--warning)', sub: 'No payment yet' },
+    { title: 'Overdue Bills',      value: a.overdueBills,          icon: FaFileInvoiceDollar,   accent: 'var(--danger)',  sub: 'Utilities overdue' },
   ]
+  const maintenanceCards = [
+    { title: 'Pending Repairs',    value: a.pendingMaintenance,    icon: FaTools,               accent: 'var(--warning)', sub: 'Awaiting action' },
+    { title: 'In Progress',        value: a.inProgressMaintenance, icon: FaClock,               accent: 'var(--primary)', sub: 'Being worked on' },
+    { title: 'Total Repair Cost',  value: formatCurrency(a.totalMaintenanceCost), icon: FaExclamationTriangle, accent: 'var(--danger)', sub: 'Excl. cancelled' },
+  ]
+
+  if (loading) {
+    return (
+      <div className="dashboard-page" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 300 }}>
+        <FaSpinner className="spin" style={{ fontSize: 32, color: 'var(--primary)' }} />
+      </div>
+    )
+  }
 
   return (
     <motion.div className="dashboard-page"
@@ -233,6 +280,15 @@ export default function Reports() {
           <h2>Reports</h2>
           <p className="sub">Business analytics for 8th Street rental units</p>
         </div>
+        <button
+          className="btn-secondary"
+          type="button"
+          onClick={load}
+          title="Refresh all report data"
+          style={{ display: 'flex', alignItems: 'center', gap: 8 }}
+        >
+          <FaSync /> Refresh
+        </button>
       </header>
 
       <div className="report-section-label">Payment Analytics</div>
@@ -253,7 +309,7 @@ export default function Reports() {
         ))}
       </section>
 
-      <div className="report-section-label">Payer & Bills Analytics</div>
+      <div className="report-section-label">Payer &amp; Bills Analytics</div>
       <section className="cards-grid cards-grid--4">
         {payerCards.map((c, i) => (
           <motion.div key={c.title} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}>
@@ -265,6 +321,15 @@ export default function Reports() {
       <div className="report-section-label">Inventory Analytics</div>
       <section className="cards-grid cards-grid--3">
         {inventoryCards.map((c, i) => (
+          <motion.div key={c.title} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}>
+            <ReportCard {...c} />
+          </motion.div>
+        ))}
+      </section>
+
+      <div className="report-section-label">Maintenance Analytics</div>
+      <section className="cards-grid cards-grid--3">
+        {maintenanceCards.map((c, i) => (
           <motion.div key={c.title} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}>
             <ReportCard {...c} />
           </motion.div>
@@ -428,11 +493,53 @@ export default function Reports() {
         </div>
       </div>
 
+      {/* ── Maintenance Overview ── */}
+      <div className="white-card report-wide">
+        <h3>Maintenance Overview</h3>
+        <p style={{ color: 'var(--text)', fontSize: '0.9rem', marginBottom: 16 }}>
+          Open and in-progress maintenance requests across all units.
+          Total cost (excl. cancelled): <strong style={{ color: '#fda4af' }}>{formatCurrency(a.totalMaintenanceCost)}</strong>
+        </p>
+        <div className="table-scroll">
+          <table className="modern-table">
+            <thead>
+              <tr><th>Unit</th><th>Type</th><th>Description</th><th>Reported</th><th>Cost</th><th>Status</th></tr>
+            </thead>
+            <tbody>
+              {maintenanceLogs
+                .filter(l => l.status !== 'Completed' && l.status !== 'Cancelled')
+                .map(log => {
+                  const room = rooms.find(r => String(r.id) === String(log.room_id))
+                  return (
+                    <tr key={log.id}>
+                      <td>{room?.room_number || '—'}</td>
+                      <td>{log.type}</td>
+                      <td style={{ maxWidth: 240, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {log.description}
+                      </td>
+                      <td>{log.reported_date || '—'}</td>
+                      <td>{log.cost != null ? `₱${Number(log.cost).toLocaleString()}` : '—'}</td>
+                      <td>
+                        <span className={`status-badge status-${log.status === 'In Progress' ? 'partial' : 'pending'}`}>
+                          {log.status}
+                        </span>
+                      </td>
+                    </tr>
+                  )
+                })}
+              {maintenanceLogs.filter(l => l.status !== 'Completed' && l.status !== 'Cancelled').length === 0 && (
+                <tr><td className="empty-state" colSpan="6">No open maintenance requests. ✅</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
       {/* ── Export Center ── */}
       <div className="white-card report-wide export-center">
         <h3>Export Report</h3>
         <p className="export-desc">
-          Downloads a complete, professionally styled Excel workbook with 5 tabs — all populated from your live data.
+          Downloads a complete, professionally styled Excel workbook with 6 tabs — all populated from your live data.
         </p>
 
         <div className="export-hero">
@@ -455,11 +562,12 @@ export default function Reports() {
 
         <div className="export-sheets-preview">
           {[
-            { sheet: 'Summary',         desc: 'KPI overview — occupancy, financials, tenants' },
-            { sheet: 'Unit Inventory',  desc: 'All units with rent, status & current tenant' },
-            { sheet: 'Tenant List',     desc: 'Contact info, move-in dates, balance due' },
-            { sheet: 'Payment History', desc: 'Every payment sorted newest-first with status' },
-            { sheet: 'Monthly Revenue', desc: 'Month-by-month boarding vs rental space totals' },
+            { sheet: 'Summary',          desc: 'KPI overview — occupancy, financials, tenants' },
+            { sheet: 'Unit Inventory',   desc: 'All units with rent, status & current tenant' },
+            { sheet: 'Tenant List',      desc: 'Contact info, move-in dates, balance due' },
+            { sheet: 'Payment History',  desc: 'Every payment sorted newest-first with status' },
+            { sheet: 'Monthly Revenue',  desc: 'Month-by-month boarding vs rental space totals' },
+            { sheet: 'Bills & Maintenance', desc: 'Unpaid bills and open maintenance requests' },
           ].map(({ sheet, desc }) => (
             <div className="export-sheet-chip" key={sheet}>
               <span className="export-sheet-icon">📄</span>
